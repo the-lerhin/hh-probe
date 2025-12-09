@@ -17,6 +17,13 @@ if (-not (Get-Module -Name 'hh.llm')) {
     }
 }
 
+if (-not (Get-Module -Name 'hh.llm.summary')) {
+    $llmSumPath = Join-Path $PSScriptRoot 'hh.llm.summary.psm1'
+    if (Test-Path $llmSumPath) {
+        Import-Module -Name $llmSumPath -DisableNameChecking -ErrorAction SilentlyContinue
+    }
+}
+
 $script:HHLLM_PickLuckyCmd = Get-Command -Name 'LLM-PickLucky' -Module 'hh.llm' -ErrorAction SilentlyContinue
 $script:HHLLM_PickWorstCmd = Get-Command -Name 'LLM-PickWorst' -Module 'hh.llm' -ErrorAction SilentlyContinue
 
@@ -267,6 +274,13 @@ function Build-CanonicalRowTyped {
         }
     }
     
+    if ($Vacancy.experience) {
+        try {
+            $cv.Experience.Id = [string]$Vacancy.experience.id
+            $cv.Experience.Name = [string]$Vacancy.experience.name
+        } catch {}
+    }
+    
     # Build badges
     try {
         $badgePack = Build-BadgesPack -Vacancy $Vacancy
@@ -422,7 +436,17 @@ function Build-CanonicalFromGetmatchVacancy {
 
     $emp = New-Object EmployerInfo
     $emp.Name = if ($RawItem.EmployerName) { $RawItem.EmployerName } else { "Getmatch Employer" }
+    
+    if ($RawItem.EmployerLogo) {
+        $emp.LogoUrl = $RawItem.EmployerLogo
+        $cv.EmployerLogoUrl = $RawItem.EmployerLogo
+    }
+    if ($RawItem.EmployerUrl) {
+        $emp.Url = $RawItem.EmployerUrl
+    }
+    
     $cv.Employer = $emp
+    $cv.EmployerName = $emp.Name
 
     # Salary
     if ($RawItem.RawObject -and ($RawItem.RawObject.salary_display_from -or $RawItem.RawObject.salary_display_to)) {
@@ -431,11 +455,47 @@ function Build-CanonicalFromGetmatchVacancy {
         if ($RawItem.RawObject.salary_display_to) { $sal.To = [double]$RawItem.RawObject.salary_display_to }
         if ($RawItem.RawObject.salary_currency) { $sal.Currency = $RawItem.RawObject.salary_currency }
         $sal.Text = $RawItem.SalaryText
+        
+        # Calculate UpperCap
+        if ($sal.To -gt 0) { $sal.UpperCap = $sal.To }
+        elseif ($sal.From -gt 0) { $sal.UpperCap = $sal.From }
+        
         $cv.Salary = $sal
     }
     elseif ($RawItem.SalaryText) {
         $sal = New-Object SalaryInfo
         $sal.Text = $RawItem.SalaryText
+        
+        # Basic parsing from text
+        try {
+            # Extract numbers
+            $nums = [regex]::Matches($RawItem.SalaryText, '\d[\d\s]*')
+            $vals = @()
+            foreach ($m in $nums) {
+                $v = $m.Value -replace '\s', ''
+                if ($v.Length -gt 0) { $vals += [double]$v }
+            }
+            
+            if ($vals.Count -ge 2) {
+                $sal.From = $vals[0]
+                $sal.To = $vals[1]
+            }
+            elseif ($vals.Count -eq 1) {
+                if ($RawItem.SalaryText -match 'от|from') { $sal.From = $vals[0] }
+                else { $sal.To = $vals[0] }
+            }
+            
+            # Detect currency
+            if ($RawItem.SalaryText -match '₽|rub|руб') { $sal.Currency = 'RUR' }
+            elseif ($RawItem.SalaryText -match '\$|usd|dollar') { $sal.Currency = 'USD' }
+            elseif ($RawItem.SalaryText -match '€|eur|euro') { $sal.Currency = 'EUR' }
+            
+            # Calculate UpperCap
+            if ($sal.To -gt 0) { $sal.UpperCap = $sal.To }
+            elseif ($sal.From -gt 0) { $sal.UpperCap = $sal.From }
+        }
+        catch {}
+        
         $cv.Salary = $sal
     }
 
@@ -474,10 +534,16 @@ function Build-CanonicalFromGetmatchVacancy {
         $cv.Description = $RawItem.RawContext
     }
   
+    $rawMap = @{}
     if ($RawItem.Skills) {
         $cv.KeySkills = $RawItem.Skills
-        $meta.Raw = @{ key_skills = $RawItem.Skills }
+        $rawMap['key_skills'] = $RawItem.Skills
     }
+    
+    if ($RawItem.EnglishLevel) {
+        $rawMap['english_level'] = $RawItem.EnglishLevel
+    }
+    $meta.Raw = $rawMap
 
     # Basic scoring placeholder
     $cv.Score = 0.5 # Default middle score
@@ -522,8 +588,8 @@ function Invoke-EditorsChoice {
     $apiKey = $cfg.ApiKey
     $model = $cfg.Model
 
-    # Prepare items for LLM (limit to top 30 to save tokens)
-    $candidates = $Rows | Select-Object -First 30
+    # Prepare items for LLM (no explicit limit here, use full BASE_SET)
+    $candidates = $Rows
     
     $temperature = if ($cfg.Temperature -ne $null) { [double]$cfg.Temperature } else { 0.2 }
     $pick = LLM-EditorsChoicePick -Items $candidates -CvText ($CvSkills -join ", ") -Endpoint $endpoint -ApiKey $apiKey -Model $model -Temperature $temperature -TimeoutSec $cfg.TimeoutSec -MaxTokens ($cfg.MaxTokens ?? 0) -TopP ($cfg.TopP ?? 0) -ExtraParameters $cfg.Parameters -OperationName 'picks.ec_why'
@@ -558,6 +624,15 @@ function Apply-Picks {
         
         if ($ecPick -and $ecPick.id) {
             $r = $Rows | Where-Object { $_.Id -eq $ecPick.id } | Select-Object -First 1
+            
+            # Fallback: Try Title match if ID failed
+            if (-not $r) {
+                $r = $Rows | Where-Object { $_.Title -eq $ecPick.id } | Select-Object -First 1
+                if ($r) {
+                    Write-Warning "[Picks] EC pick matched by Title instead of Id: '$($ecPick.id)'"
+                }
+            }
+
             if ($r) {
                 # Determine 'why' text
                 $whyText = ''
@@ -586,6 +661,7 @@ function Apply-Picks {
         if (Get-Command -Name Get-TrueRandomIndex -ErrorAction SilentlyContinue) {
             try { $luckyIdx = Get-TrueRandomIndex -MaxExclusive $Rows.Count } catch { $luckyIdx = -1 }
         }
+        Write-Host "[DEBUG] LuckyIdx: $luckyIdx Rows: $($Rows.Count)" -ForegroundColor Magenta
         
         if ($luckyIdx -ge 0 -and $luckyIdx -lt $Rows.Count) {
             $r = $Rows[$luckyIdx]
@@ -642,6 +718,15 @@ function Apply-Picks {
         }
         if ($worstPick -and $worstPick.id) {
             $r = $Rows | Where-Object { $_.Id -eq $worstPick.id } | Select-Object -First 1
+            
+            # Fallback: Try Title match if ID failed
+            if (-not $r) {
+                $r = $Rows | Where-Object { $_.Title -eq $worstPick.id } | Select-Object -First 1
+                if ($r) {
+                    Write-Warning "[Picks] Worst pick matched by Title instead of Id: '$($worstPick.id)'"
+                }
+            }
+
             if ($r) {
                 # Determine 'why' text
                 $worstWhy = ''
@@ -729,51 +814,111 @@ function Get-HHProbeVacancies {
         [int]$RecommendTopTake
     )
 
-    # 1. Fetch Vacancies (HH)
-    Write-Host "[Pipeline] Fetching HH vacancies..." -ForegroundColor Cyan
-    Write-Host "[Pipeline] SearchText: '$SearchText' ResumeId: '$ResumeId'" -ForegroundColor Gray
-    $hhResult = Get-HHHybridVacancies -ResumeId $ResumeId -QueryText $SearchText -Limit ($VacancyPerPage * $VacancyPages) -Config @{
-        PerPage          = $VacancyPerPage
+    # Prepare unified fetch context to pass safely to parallel runspaces
+    $fetchContext = @{
+        ResumeId         = $ResumeId
+        SearchText       = $SearchText
+        VacancyPerPage   = $VacancyPerPage
+        VacancyPages     = $VacancyPages
         RecommendEnabled = $RecommendEnabled
         RecommendPerPage = $RecommendPerPage
-        Filters          = $SearchFilters
+        SearchFilters    = $SearchFilters
+        GetmatchConfig   = $getmatchConfig
+        PSScriptRoot     = $PSScriptRoot
     }
-    $hhItems = @()
-    if ($hhResult.Items) { $hhItems = $hhResult.Items }
-    Write-Host "[Pipeline] Fetched $($hhItems.Count) vacancies from HH"
 
-    # 2. Fetch Vacancies (Getmatch)
-    $gmItems = @()
-    $getmatchConfig = Get-HHConfigValue -Path 'getmatch'
+    # Build parallel jobs
+    $fetchJobs = @()
     
-    $gmEnabled = $false
-    if ($getmatchConfig) {
-        if ($getmatchConfig -is [System.Collections.IDictionary]) { $gmEnabled = [bool]$getmatchConfig['enabled'] }
-        elseif ($getmatchConfig.PSObject.Properties['enabled']) { $gmEnabled = [bool]$getmatchConfig.enabled }
+    # Job 1: HH Hybrid
+    $fetchJobs += [PSCustomObject]@{
+        Name = 'HH'
+        Script = {
+            param($ctx)
+            Write-Host "[Fetch-Parallel] Starting HH fetch..." -ForegroundColor Cyan
+            
+            # Bootstrap parallel environment
+            if ($ctx.PSScriptRoot) {
+                $hPath = Join-Path $ctx.PSScriptRoot 'hh.helpers.psm1'
+                if (Test-Path $hPath) { Import-Module $hPath -DisableNameChecking -Force -ErrorAction SilentlyContinue }
+                if (Get-Command -Name 'Import-HHModulesForParallel' -ErrorAction SilentlyContinue) {
+                    Import-HHModulesForParallel -ModulesPath $ctx.PSScriptRoot
+                }
+                
+                # Task specific
+                $fetchPath = Join-Path $ctx.PSScriptRoot 'hh.fetch.psm1'
+                if (Test-Path $fetchPath) { Import-Module $fetchPath -DisableNameChecking -Force -ErrorAction SilentlyContinue }
+            }
+
+            $hhRes = Get-HHHybridVacancies -ResumeId $ctx.ResumeId -QueryText $ctx.SearchText -Limit ($ctx.VacancyPerPage * $ctx.VacancyPages) -Config @{
+                PerPage          = $ctx.VacancyPerPage
+                RecommendEnabled = $ctx.RecommendEnabled
+                RecommendPerPage = $ctx.RecommendPerPage
+                Filters          = $ctx.SearchFilters
+            }
+            $items = @()
+            if ($hhRes.Items) { $items = $hhRes.Items }
+            Write-Host "[Fetch-Parallel] HH fetch completed: $($items.Count) items" -ForegroundColor Cyan
+            return $items
+        }
     }
     
+    # Job 2: Getmatch
     if ($gmEnabled) {
-        Write-Host "[Pipeline] Fetching Getmatch vacancies..." -ForegroundColor Cyan
-        
-        # Convert to hashtable if needed
-        $gmCfgHash = @{}
-        if ($getmatchConfig -is [System.Collections.IDictionary]) {
-            $gmCfgHash = $getmatchConfig
-        }
-        else {
-            foreach ($prop in $getmatchConfig.PSObject.Properties) {
-                $gmCfgHash[$prop.Name] = $prop.Value
+        $fetchJobs += [PSCustomObject]@{
+            Name = 'Getmatch'
+            Script = {
+                param($ctx)
+                Write-Host "[Fetch-Parallel] Starting Getmatch fetch..." -ForegroundColor Cyan
+                
+                # Bootstrap parallel environment
+                if ($ctx.PSScriptRoot) {
+                    $hPath = Join-Path $ctx.PSScriptRoot 'hh.helpers.psm1'
+                    if (Test-Path $hPath) { Import-Module $hPath -DisableNameChecking -Force -ErrorAction SilentlyContinue }
+                    if (Get-Command -Name 'Import-HHModulesForParallel' -ErrorAction SilentlyContinue) {
+                        Import-HHModulesForParallel -ModulesPath $ctx.PSScriptRoot
+                    }
+                    
+                    # Task specific
+                    $fetchPath = Join-Path $ctx.PSScriptRoot 'hh.fetch.psm1'
+                    if (Test-Path $fetchPath) { Import-Module $fetchPath -DisableNameChecking -Force -ErrorAction SilentlyContinue }
+                }
+                
+                # Convert GM config back to hashtable if needed
+                $gmCfgHash = @{}
+                if ($ctx.GetmatchConfig -is [System.Collections.IDictionary]) {
+                    $gmCfgHash = $ctx.GetmatchConfig
+                }
+                else {
+                    foreach ($prop in $ctx.GetmatchConfig.PSObject.Properties) {
+                        $gmCfgHash[$prop.Name] = $prop.Value
+                    }
+                }
+
+                $gmItems = @()
+                if (Get-Command -Name 'Get-GetmatchVacanciesRaw' -ErrorAction SilentlyContinue) {
+                    $gmItems = Get-GetmatchVacanciesRaw -GetmatchConfig $gmCfgHash
+                }
+                Write-Host "[Fetch-Parallel] Getmatch fetch completed: $($gmItems.Count) items" -ForegroundColor Cyan
+                return $gmItems
             }
         }
-        
-        # Call helper from hh.fetch
-        if (Get-Command -Name 'Get-GetmatchVacanciesRaw' -ErrorAction SilentlyContinue) {
-            $gmItems = Get-GetmatchVacanciesRaw -GetmatchConfig $gmCfgHash
-        }
-        Write-Host "[Pipeline] Fetched $($gmItems.Count) vacancies from Getmatch"
     }
-
-    return @($hhItems + $gmItems)
+    
+    # Execute Parallel
+    $allResults = $fetchJobs | ForEach-Object -Parallel {
+        $ctx = $using:fetchContext
+        $res = & $_.Script -ctx $ctx
+        return $res
+    } -ThrottleLimit 5
+    
+    # Flatten results
+    $finalItems = @()
+    foreach ($res in $allResults) {
+        if ($res) { $finalItems += $res }
+    }
+    
+    return $finalItems
 }
 
 function Invoke-HHProbeMain {
@@ -823,6 +968,9 @@ function Invoke-HHProbeMain {
         Set-LlmUsagePipelineState -State $PipelineState
     }
     
+    $swTotal = [System.Diagnostics.Stopwatch]::StartNew()
+    $swStage = [System.Diagnostics.Stopwatch]::StartNew()
+    
     # 2. Fetch All Vacancies (Unified)
     # Build filters
     $filters = @{}
@@ -836,6 +984,10 @@ function Invoke-HHProbeMain {
         -RecommendEnabled $RecommendEnabled `
         -RecommendPerPage $RecommendPerPage `
         -RecommendTopTake $RecommendTopTake
+    
+    $swStage.Stop()
+    $PipelineState.Timings['Fetch'] = $swStage.Elapsed
+    $swStage.Restart()
     
     # 3. Canonicalization & Merging
     $allRows = @()
@@ -904,6 +1056,10 @@ function Invoke-HHProbeMain {
     Write-Host "[Search] canonical rows after dedup:  $($allRows.Count) (HH: $countHH, GM: $countGM)"
     
     Add-HHPipelineStat -State $PipelineState -Path @('Search', 'ItemsFetched') -Value $allRows.Count
+
+    $swStage.Stop()
+    $PipelineState.Timings['Processing'] = $swStage.Elapsed
+    $swStage.Restart()
 
     # 3.1 Pre-enrichment for Synthetic Items (Web Recommendations)
     # We must enrich these BEFORE scoring, otherwise they have 0 score and get dropped from BASE_SET.
@@ -986,6 +1142,10 @@ function Invoke-HHProbeMain {
         }
     }
     Write-Host "[Pipeline] Pre-enriched $syntheticEnriched synthetic items" -ForegroundColor Cyan
+
+    $swStage.Stop()
+    $PipelineState.Timings['Enrichment'] = $swStage.Elapsed
+    $swStage.Restart()
 
     # 4. Scoring (Baseline)
     Write-Host "[Pipeline] Scoring $($allRows.Count) candidates (Baseline)..." -ForegroundColor Cyan
@@ -1072,16 +1232,26 @@ function Invoke-HHProbeMain {
         Write-Progress -Activity "Local LLM Scoring" -Completed
     }
     
+    # Fetch rates once
+    $rates = @{ 'RUB' = 1.0 }
+    if (Get-Command -Name Get-ExchangeRates -ErrorAction SilentlyContinue) {
+        try { $rates = Get-ExchangeRates } catch {}
+    }
+
     foreach ($row in $allRows) {
         # Calculate baseline score
         if (Get-Command -Name Calculate-Score -ErrorAction SilentlyContinue) {
-            Calculate-Score -Vacancy $row -CvSnapshot $cvSnapshot
+            Calculate-Score -Vacancy $row -CvSnapshot $cvSnapshot -ExchangeRates $rates
         }
         # Store baseline in ranking meta
         $row.Meta.ranking.BaselineScore = $row.Score
         $row.Meta.ranking.FinalScore = $row.Score # Init final with baseline
     }
     
+    $swStage.Stop()
+    $PipelineState.Timings['Scoring'] = $swStage.Elapsed
+    $swStage.Restart()
+
     # 5. Ranking V3 Pipeline
     # Read Config
     $displayRows = 30
@@ -1336,9 +1506,14 @@ function Invoke-HHProbeMain {
                     # Update Ranking info
                     $row.Meta.ranking.SummarySource = $remoteSource
                     
-                    # Store specifically as remote text if we want to preserve local separately?
-                    # Start with overwriting as per plan (Part 2: Expose External LLM Summaries)
+                    # Store specifically as remote text
                     $row.Meta.Summary.RemoteText = $cleanRemote
+                    
+                    # Propagate to main summary fields for reporting
+                    $row.Meta.Summary.text = $cleanRemote
+                    if ($row.PSObject.Properties['Summary']) {
+                        $row.Summary = $cleanRemote
+                    }
                 }
             }
         }
@@ -1347,6 +1522,10 @@ function Invoke-HHProbeMain {
         }
     }
     
+    $swStage.Stop()
+    $PipelineState.Timings['Ranking'] = $swStage.Elapsed
+    $swStage.Restart()
+
     # Select Final Top N
     $finalTopRows = $candidateRows | Select-Object -First $displayRows
     
@@ -1467,14 +1646,23 @@ function Invoke-HHProbeMain {
     
     # 5.5 Picks
     Write-Host "[Pipeline] Selecting picks (EC, Lucky, Worst)..." -ForegroundColor Cyan
-    $allRows = Apply-Picks -Rows $allRows -LLMEnabled:$LLMEnabled -CvPayload $compactCvPayload
+    $allRows = Apply-Picks -Rows $candidateRows -LLMEnabled:$LLMEnabled -CvPayload $compactCvPayload
     
+    $swStage.Stop()
+    $PipelineState.Timings['Picks'] = $swStage.Elapsed
+    $swStage.Restart()
+
     # 6. Render
     Write-Host "[Pipeline] Rendering reports..."
     if (Get-Command -Name Render-Reports -ErrorAction SilentlyContinue) {
         Render-Reports -Rows $allRows -OutputsRoot $OutputsRoot -PipelineState $PipelineState
     }
     
+    $swStage.Stop()
+    $PipelineState.Timings['Render'] = $swStage.Elapsed
+    $swTotal.Stop()
+    $PipelineState.Run.Duration = $swTotal.Elapsed
+
     # 9. Notify
     if ($Digest) {
         Write-Host "[Pipeline] Sending Telegram digest..."

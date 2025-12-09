@@ -51,6 +51,7 @@ public class SummaryInfo {
   public string source { get; set; } = string.Empty;
   public string lang { get; set; } = string.Empty;
   public string model { get; set; } = string.Empty;
+  public string RemoteText { get; set; } = string.Empty;
   public SummaryInfo() { }
 }
 
@@ -107,6 +108,12 @@ public class BadgeInfo {
   public BadgeInfo() { }
 }
 
+public class ExperienceInfo {
+  public string id { get; set; } = string.Empty;
+  public string name { get; set; } = string.Empty;
+  public ExperienceInfo() { }
+}
+
 public class VacancyRankingMeta {
   public double BaselineScore { get; set; } = 0;
   public double RemoteFitScore { get; set; } = 0;
@@ -155,6 +162,7 @@ public class CanonicalVacancy {
   public System.Nullable<System.DateTime> published_at { get; set; } = System.DateTime.UtcNow;
   public EmployerInfo employer { get; set; } = new EmployerInfo();
   public SalaryInfo salary { get; set; } = new SalaryInfo();
+  public ExperienceInfo Experience { get; set; } = new ExperienceInfo();
   public MetaInfo meta { get; set; } = new MetaInfo();
   public PicksInfo picks { get; set; } = new PicksInfo();
   public SkillsInfo skills { get; set; } = new SkillsInfo();
@@ -200,6 +208,7 @@ public class CanonicalVacancy {
   public CanonicalVacancy() {
     employer = employer ?? new EmployerInfo();
     salary = salary ?? new SalaryInfo();
+    Experience = Experience ?? new ExperienceInfo();
     meta = meta ?? new MetaInfo();
     picks = picks ?? new PicksInfo();
     skills = skills ?? new SkillsInfo();
@@ -218,6 +227,7 @@ public class CanonicalVacancy {
   $script:CanonicalVacancy = [CanonicalVacancy]
   $script:SalaryInfo = [SalaryInfo]
   $script:EmployerInfo = [EmployerInfo]
+  $script:ExperienceInfo = [ExperienceInfo]
   $script:SummaryInfo = [SummaryInfo]
   $script:PicksInfo = [PicksInfo]
   $script:MetaInfo = [MetaInfo]

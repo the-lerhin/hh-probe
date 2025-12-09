@@ -908,6 +908,20 @@ function Get-GetmatchVacanciesRaw {
                                     }
                                 }
                         
+                                # Employer Logo & URL
+                                $logo = $null
+                                if ($offer.company) {
+                                    if ($offer.company.logo) { $logo = $offer.company.logo }
+                                    elseif ($offer.company.logotype) { 
+                                        $logo = "https://getmatch.ru/uploads/companies_logos/" + $offer.company.logotype 
+                                    }
+                                }
+                                
+                                $empUrl = $null
+                                if ($offer.company -and $offer.company.url) {
+                                    $empUrl = "https://getmatch.ru" + $offer.company.url
+                                }
+
                                 # Description & Stack
                                 $desc = $offer.offer_description
                                 $stack = @()
@@ -922,13 +936,15 @@ function Get-GetmatchVacanciesRaw {
                                     Source       = 'getmatch'
                                     Title        = $offer.position
                                     EmployerName = $offer.company?.name
-                                    EmployerLogo = $offer.company?.logo
+                                    EmployerLogo = $logo
+                                    EmployerUrl  = $empUrl
                                     SalaryText   = $salText
                                     LocationText = $locText
                                     Url          = $fullUrl
                                     PostedAtText = $offer.published_at
                                     Description  = $desc
                                     Skills       = $stack
+                                    EnglishLevel = $offer.english_level
                                     RawObject    = $offer
                                     search_tiers = @('getmatch')
                                 }
@@ -969,15 +985,24 @@ function Get-GetmatchVacanciesRaw {
                         $nextMatchStart = $content.Length
                         if ($i -lt $linkMatches.Count - 1) { $nextMatchStart = $linkMatches[$i + 1].Index }
                 
-                        # 1. Find Employer Name (Backwards from link in the region)
+                        # 1. Find Employer Name
                         $employer = $null
-                        $preLinkLen = $m.Index - $prevMatchEnd
-                        if ($preLinkLen -gt 0) {
-                            $preLinkText = $content.Substring($prevMatchEnd, $preLinkLen)
-                            $titleRegex = '<div[^>]*class="[^"]*b-vacancy-card-title[^"]*"[^>]*>(.*?)</div>'
-                            $tMatch = [regex]::Match($preLinkText, $titleRegex, 'RightToLeft, IgnoreCase')
-                            if ($tMatch.Success) {
-                                $employer = $tMatch.Groups[1].Value -replace '<[^>]+>', '' -replace '\s+', ' '
+                        
+                        # Look in 'After' segment (Title -> Company structure)
+                        # Structure: <div class="b-vacancy-card-company"><span>Name</span></div>
+                        $companyRegex = '<div[^>]*class="[^"]*b-vacancy-card-company[^"]*"[^>]*>[\s\S]*?<span[^>]*>(.*?)</span>'
+                        $cMatch = [regex]::Match($afterSegment, $companyRegex, 'IgnoreCase')
+                        
+                        if ($cMatch.Success) {
+                            $employer = $cMatch.Groups[1].Value -replace '<[^>]+>', ''
+                            $employer = $employer.Trim()
+                        }
+                        
+                        # Fallback: Check 'Before' segment (unlikely but safe)
+                        if (-not $employer -and $preLinkLen -gt 0) {
+                            $cMatchBefore = [regex]::Match($beforeSegment, $companyRegex, 'RightToLeft, IgnoreCase')
+                            if ($cMatchBefore.Success) {
+                                $employer = $cMatchBefore.Groups[1].Value -replace '<[^>]+>', ''
                                 $employer = $employer.Trim()
                             }
                         }
@@ -1095,4 +1120,97 @@ function Get-GetmatchVacanciesRaw {
     return $results
 }
 
-Export-ModuleMember -Function Write-LogFetch, Get-HHEffectiveSearchFilters, Search-Vacancies, Get-HHSimilarVacancies, Get-HHWebRecommendations, Get-HHHybridVacancies, Get-VacancyDetail, Get-EmployerDetail, Get-SkillsVocab, Get-GetmatchConfig, Get-GetmatchQueryUrl, Get-GetmatchQueryUrls, Get-GetmatchVacanciesRaw, Resolve-HHAreaIdByName, Resolve-HHRoleIdByName, Resolve-HHAreaCountry, Get-HHAreaDetail, Get-HHAreaCacheKey, Get-EmployerRatingScrape, Parse-EmployerRatingHtml, Update-EmployerRating
+function Get-ExchangeRates {
+    [CmdletBinding()]
+    param()
+
+    $cacheKey = "currency_rates"
+    
+    # 1. Try Cache
+    if (Get-Command -Name Get-HHCacheItem -ErrorAction SilentlyContinue) {
+        try {
+            $cached = Get-HHCacheItem -Collection 'currency' -Key $cacheKey
+            if ($cached -and $cached -is [hashtable]) {
+                return $cached
+            }
+        } catch {
+            if (Get-Command -Name Write-LogFetch -ErrorAction SilentlyContinue) {
+                Write-LogFetch -Message "Failed to read currency cache: $_" -Level Warning
+            }
+        }
+    }
+
+    # 2. Fetch
+    # Base rates (RUB relative)
+    $rates = @{ 'RUB' = 1.0; 'RUR' = 1.0 } 
+    
+    try {
+        $url = "https://www.cbr-xml-daily.ru/daily_json.js"
+        
+        $resp = $null
+        if (Get-Command -Name Invoke-HttpRequest -ErrorAction SilentlyContinue) {
+            $resp = Invoke-HttpRequest -Uri $url -Method 'GET' -TimeoutSec 10 -OperationName 'CurrencyFetch'
+        } else {
+            $resp = Invoke-RestMethod -Uri $url -Method 'GET' -ErrorAction Stop
+        }
+
+        $json = $null
+        if ($resp -is [string]) { $json = $resp | ConvertFrom-Json }
+        elseif ($resp.PSObject.Properties['Content']) { $json = $resp.Content | ConvertFrom-Json }
+        else { $json = $resp }
+
+        if ($json -and $json.Valute) {
+            $parse = {
+                param($code)
+                if ($json.Valute.$code) {
+                    $val = 0.0
+                    try { $val = [double]$json.Valute.$code.Value } catch {}
+                    $nom = 1.0
+                    try { if ($json.Valute.$code.Nominal) { $nom = [double]$json.Valute.$code.Nominal } } catch {}
+                    if ($nom -eq 0) { $nom = 1.0 }
+                    return ($val / $nom)
+                }
+                return $null
+            }
+
+            $usd = & $parse 'USD'
+            if ($usd) { $rates['USD'] = $usd }
+            
+            $eur = & $parse 'EUR'
+            if ($eur) { $rates['EUR'] = $eur }
+            
+            $kzt = & $parse 'KZT'
+            if ($kzt) { $rates['KZT'] = $kzt }
+            
+            $cny = & $parse 'CNY'
+            if ($cny) { $rates['CNY'] = $cny }
+            
+            $byn = & $parse 'BYN'
+            if ($byn) { $rates['BYN'] = $byn }
+
+            # Cache (24h = 1440 min)
+            if (Get-Command -Name Set-HHCacheItem -ErrorAction SilentlyContinue) {
+                try {
+                    Set-HHCacheItem -Collection 'currency' -Key $cacheKey -Value $rates -Metadata @{ ttl_minutes = 1440 } 
+                } catch {
+                    if (Get-Command -Name Write-LogFetch -ErrorAction SilentlyContinue) {
+                        Write-LogFetch -Message "Failed to write currency cache: $_" -Level Warning
+                    }
+                }
+            }
+            
+            if (Get-Command -Name Write-LogFetch -ErrorAction SilentlyContinue) {
+                Write-LogFetch -Message "Fetched currency rates: USD=$($rates['USD']) EUR=$($rates['EUR'])" -Level Verbose
+            }
+        }
+    }
+    catch {
+        if (Get-Command -Name Write-LogFetch -ErrorAction SilentlyContinue) {
+            Write-LogFetch -Message "Currency fetch failed (using default RUB=1.0): $_" -Level Warning
+        }
+    }
+
+    return $rates
+}
+
+Export-ModuleMember -Function Write-LogFetch, Get-HHEffectiveSearchFilters, Search-Vacancies, Get-HHSimilarVacancies, Get-HHWebRecommendations, Get-HHHybridVacancies, Get-VacancyDetail, Get-EmployerDetail, Get-SkillsVocab, Get-GetmatchConfig, Get-GetmatchQueryUrl, Get-GetmatchQueryUrls, Get-GetmatchVacanciesRaw, Resolve-HHAreaIdByName, Resolve-HHRoleIdByName, Resolve-HHAreaCountry, Get-HHAreaDetail, Get-HHAreaCacheKey, Get-EmployerRatingScrape, Parse-EmployerRatingHtml, Update-EmployerRating, Get-ExchangeRates
