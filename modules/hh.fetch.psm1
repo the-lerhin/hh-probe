@@ -464,6 +464,9 @@ function Get-HHHybridVacancies {
     
     # Execute jobs (sequential for now to simulate parallel structure until PoshRSJob/ThreadJob is standardized)
     # TODO: Replace with real parallel execution when infrastructure allows (SDD-6.3)
+    # WARNING: Do not parallelize internal HH fetch (Similar/Recs/General) until hh.http.psm1 supports 
+    # cross-runspace rate limiting. Current rate limiter is per-runspace, so parallelizing here 
+    # would multiply the request rate to api.hh.ru, triggering 429s.
     foreach ($job in $jobs) {
         try {
             Write-LogFetch -Message "Starting fetch job: $($job.Name)" -Level Verbose
