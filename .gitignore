@@ -1,0 +1,160 @@
+# ========================
+# PowerShell Project Rules
+# ========================
+
+# PowerShell compiled modules and assemblies
+*.psm1~
+*.psd1~
+*.ps1~
+*.pssc
+*.psrc
+*.cdxml
+*.ps1xml
+
+# PowerShell remoting and session files
+*.psc1
+*.pssession
+
+# PowerShell help and documentation cache
+about_*.help.txt
+
+# PowerShell execution log files
+*.log
+*.evtx
+
+# ========================
+# Runtime Data & Cache
+# ========================
+
+# Runtime cache and database files
+data/cache/
+data/skills_corpus.json
+*.db
+*.db-shm
+*.db-wal
+
+# Log files
+hh.log
+*.log
+*.out
+*.err
+
+# Temporary runtime files
+*.tmp
+*.temp
+tmp/
+
+# ========================
+# Configuration & Secrets
+# ========================
+
+# Temporary and environment-specific configuration files
+*.tmp.jsonc
+*.tmp.json
+*.env
+.env*
+
+# Secret and credential files
+*.key
+*.pem
+*.crt
+*.cert
+*.secret
+secrets.json
+credentials.json
+
+# Configuration backups
+*.backup
+*.bak
+
+# ========================
+# Build & Development Tools
+# ========================
+
+# Build artifacts
+bin/
+obj/
+out/
+dist/
+build/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Agent and temporary directories
+.agent/
+.tmp/
+.trae/
+
+# External dependencies that should not be committed
+external/
+
+# ========================
+# System & OS Files
+# ========================
+
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*:2e:*
+*.lnk
+
+# Windows system files
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.tmp
+*.temp
+
+# Linux system files
+.directory
+*.bak
+*~
+
+# ========================
+# Project Specific
+# ========================
+
+# hh_probe specific exclusions
+hh.log
+data/cache/
+data/skills_corpus.json
+config/*.tmp.jsonc
+config/*.backup
+config/hh.provider*.tmp.jsonc
+config/hh.secrets*.tmp.jsonc
+config/notify.invalid.tmp.jsonc
+data/cache/
+data/.DS_Store
+
+# Exclude all external dependencies except documentation
+external/
+!external/README.md
+
+# ========================
+# Testing & Coverage
+# ========================
+
+# Test artifacts
+coverage/
+.nyc_output
+*.gcda
+*.gcno
+
+# Pester test output
+TestResults.xml
+Pester.xml
+
+# ========================
+# End of .gitignore
+# ========================
