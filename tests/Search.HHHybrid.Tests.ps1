@@ -54,5 +54,22 @@ Describe 'HH Hybrid Search' {
              $items[1].id | Should -Be '2' # From similar
              $items[2].id | Should -Be '3'
         }
+
+        It 'Merges Web Recommendations when enabled' {
+            Mock Get-HHSimilarVacancies { return @() } -ModuleName 'hh.fetch'
+            Mock Search-Vacancies { return @() } -ModuleName 'hh.fetch'
+            
+            Mock Get-HHWebRecommendations {
+                return @(
+                    [pscustomobject]@{ id = '55'; name = 'WebRec1'; search_tiers = @('web_recommendation') }
+                )
+            } -ModuleName 'hh.fetch'
+
+            $res = Get-HHHybridVacancies -ResumeId 'R1' -Config @{ RecommendEnabled = $true }
+            
+            $res.Items.Count | Should -Be 1
+            $res.Items[0].id | Should -Be '55'
+            $res.Sources.Recommendations | Should -Be 1
+        }
     }
 }
