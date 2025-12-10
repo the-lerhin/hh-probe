@@ -1,0 +1,606 @@
+// =============================================================================
+// HH Probe Configuration (ultimate reference)
+// Конфигурация HH Probe (подробная справка)
+// -----------------------------------------------------------------------------
+// Language policy / Языковая политика:
+// Every setting is described in both English and Russian.
+// Параметр описан на английском и русском языках.
+//
+// Override priority / Приоритет переопределений:
+// 1) Command-line switches / Ключи командной строки
+// 2) Environment variables / Переменные окружения
+// 3) This file (when selected) / Этот файл (при использовании)
+// 4) Built-in defaults / Значения по умолчанию в коде
+//
+// Switching config / Выбор конфигурации:
+// - Use `hh.ps1 -Config path/to/config.jsonc`
+// - or set environment variable `HH_CONFIG_FILE`
+// - if neither is provided, `config/hh.config.jsonc` is used (preferred),
+//   or it falls back to `config/hh.config.minimal.jsonc`.
+// -----------------------------------------------------------------------------
+{
+  // ===========================================================================
+  // API KEYS AND TOKENS / КЛЮЧИ API И ТОКЕНЫ
+  // ===========================================================================
+  // Legacy root-level tokens (kept for backward compatibility)
+  // Устаревшие токены на корневом уровне (сохранены для совместимости)
+  // NOTE: All secrets are centralized under `keys.*`.
+  // TODO: Before pushing to git, move secrets to environment variables.
+  //       See docs/TESTING.md → External dependencies.
+  // ===========================================================================
+  // KEYS SECTION (Primary location for secrets)
+  // СЕКЦИЯ КЛЮЧЕЙ (Основное расположение секретов)
+  // ===========================================================================
+  "keys": {
+    // HeadHunter OAuth token (required)
+    // OAuth токен HeadHunter (обязательно)
+    "hh_token": "",
+    // HeadHunter XSRF token (optional, for cookie-based auth)
+    // XSRF токен HeadHunter (опционально, для авторизации через cookie)
+    "hh_xsrf": "",
+    // Generic LLM API key (OpenAI-compatible).
+    // Универсальный ключ API LLM (OpenAI-совместимый).
+    "llm_api_key": "",
+    // HydraAI API key (Multi-model provider)
+    // Ключ API HydraAI (Мульти-модельный провайдер)
+    "hydra_api_key": "",
+    // Telegram bot token for notifications (Digest/Ping).
+    // Токен бота Telegram для уведомлений (Digest/Ping).
+    "telegram_bot_token": "",
+    // Telegram chat id for notifications.
+    // ID чата Telegram для уведомлений.
+    "telegram_chat_id": "",
+    // OAuth Client ID (for HH API)
+    "hh_client_id": "",
+    // OAuth Client Secret
+    "hh_client_secret": "",
+    // OAuth Redirect URI
+    "hh_redirect_uri": ""
+  },
+  // ===========================================================================
+  // API CLIENT SETTINGS / НАСТРОЙКИ API-КЛИЕНТА
+  // ===========================================================================
+  "api": {
+    "base_url": "https://api.hh.ru",
+    "rate_limit": {
+      // Soft ceiling for requests per minute. Lower if you see 429 responses.
+      // Мягкое ограничение запросов в минуту. Уменьшайте при частых 429.
+      "requests_per_minute": 16,
+      // Limit concurrent HTTP requests across the app to avoid bursts.
+      // Ограничить параллельные HTTP‑запросы, чтобы избежать всплесков.
+      "concurrent_requests": 1,
+      // Baseline delay inserted before each API call (ms).
+      // Базовая задержка перед запросом (мс).
+      "base_delay_ms": 600,
+      // Maximum backoff when the limit is exceeded (ms).
+      // Максимальная задержка при превышении лимита (мс).
+      "max_delay_ms": 12000,
+      // Random jitter window to avoid synchronized bursts (ms).
+      // Окно случайной задержки, чтобы избежать синхронных всплесков (мс).
+      "jitter_min_ms": 300,
+      "jitter_max_ms": 900
+    }
+  },
+  // ===========================================================================
+  // RUN SETTINGS / НАСТРОЙКИ ЗАПУСКА
+  // ===========================================================================
+  "run": {
+    // Enable parallel processing by default (ForEach-Object -Parallel).
+    // Включить параллельную обработку по умолчанию (ForEach-Object -Parallel).
+    "parallel_default": true,
+    "parallel_throttle_limit": 2,
+    "parallel_batch_size": 20,
+    "parallel_retry_count": 2,
+    "parallel_retry_backoff_ms": 250,
+    "parallel_timeout_sec": 90
+  },
+  // ===========================================================================
+  // SEARCH SETTINGS / НАСТРОЙКИ ПОИСКА
+  // ===========================================================================
+  "search": {
+    // Toggle the general text search stage (hybrid/general queries).
+    // Включить этап общего текстового поиска (hybrid/general).
+    "enable_general": true,
+    // Inline keyword override (multiline string). Empty => use keywords file.
+    // Встроенные ключевые слова (многострочная строка). Пусто => использовать файл.
+    "keyword_text": "CISA\\nВнутренний аудит\\nВнутренний контроль\\nDevSecOps\\nSOC\\nSIEM\\nDLP\\nGRC\\nISO 27001\\nPCI DSS",
+    // Path to keywords file (relative to repo root or absolute).
+    // Путь к файлу ключевых слов (относительный к корню репозитория или абсолютный).
+    "keywords_file": "data/inputs/csharp_keywords.txt",
+    // How to join simple keyword lists: "OR" or "AND" (default: OR)
+    // Как объединять простой список ключевых слов: "OR" или "AND" (по умолчанию: OR)
+    "keywords_mode": "OR",
+    // Limit the number of keywords used from multiline lists (0 = unlimited)
+    // Ограничить количество ключевых слов из многострочного списка (0 = без ограничений)
+    "max_keywords": 0,
+    // Use CV keywords as fallback when inline list is empty (default: true).
+    // Использовать навыки из CV, если явно заданный список пуст (по умолчанию: true).
+    "use_cv_keywords": "",
+    // Force HH resume id for hybrid similar_vacancies stage. Empty => auto-pick last active (or cv.hh_resume_id).
+    // Принудительный resume_id для similar_vacancies. Пусто => выбрать автоматически (или cv.hh_resume_id).
+    "resume_id": "",
+    // Fallback single keyword used only when no explicit keywords are provided
+    // Резервное ключевое слово, используется только при отсутствии явных ключевых слов
+    "fallback_keyword": "CISA",
+    // Optional numeric location filters — HH area ids (strings). Example: ["1","2"] for Moscow + St. Petersburg.
+    // Необязательные числовые фильтры мест — ID регионов HH. Пример: ["1","2"] для Москвы и Санкт‑Петербурга.
+    "area": [],
+    // Optional human-readable filters resolved to ids.
+    // Необязательные фильтры по названиям (конвертируются в ID).
+    "area_names": [],
+    // Target HH professional role ids (strings). Example: ["96","164"].
+    // Целевые профессиональные роли HH (ID строками). Пример: ["96","164"].
+    "professional_roles": [],
+    // Human-readable role names resolved to ids automatically.
+    // Названия ролей (автоконвертируются в ID).
+    "role_names": [],
+    // Additional HH filters applied to both similar and general stages (leave blank to skip).
+    // Дополнительные фильтры HH для обоих этапов (оставьте пустыми, чтобы пропустить).
+    "specialization": "",
+    "schedule": "",
+    "employment": "",
+    "experience": "",
+    "only_with_salary": "",
+    "salary": "",
+    "only_remote": false,
+    "only_relocation": false,
+    // Number of cached vacancies to load when falling back to offline cache.
+    // Сколько вакансий подгружать из офлайн-кэша при откате.
+    "per_page": 10,
+    "recommendations": {
+      // Enable HH "similar vacancies" recommendations.
+      // Включить рекомендованные вакансии от HH.
+      "enabled": true,
+      "top_take": 3,
+      "per_page": 20,
+      // Web scraping for "AI recommendations" (requires cookie)
+      "web_scraping": {
+        "enabled": true,
+        // TODO: cookie_hhtoken MUST be provided via environment before pushing to git
+        "cookie_hhtoken": "",
+        "_xsrf": "",
+        "pages": 5,
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    }
+  },
+  // ===========================================================================
+  // GETMATCH INTEGRATION / ИНТЕГРАЦИЯ GETMATCH
+  // ===========================================================================
+  "getmatch": {
+    "enabled": true,
+    "base_url": "https://getmatch.ru/vacancies",
+    "pages": 1,
+    "params": {
+      "l": [
+        "moscow",
+        "remote"
+      ],
+      "se": "senior"
+    }
+  },
+  "views": {
+    "window_days": 7
+  },
+  // ===========================================================================
+  // FETCH LIMITS / ЛИМИТЫ ПОЛУЧЕНИЯ ДАННЫХ
+  // ===========================================================================
+  "limits": {
+    "VacancyPerPage": 70,
+    "VacancyPages": 1,
+    // Debug overrides (used when -Debug is passed). 0 = keep defaults.
+    // Переопределения в режиме -Debug. 0 = оставить значение по умолчанию.
+    "DebugVacancyPerPage": 10,
+    "DebugVacancyPages": 1
+  },
+  // ===========================================================================
+  // REPORT SETTINGS / НАСТРОЙКИ ОТЧЁТА
+  // ===========================================================================
+  "report": {
+    // Top rows to display in HTML (0 = show all).
+    // Сколько верхних строк показывать в HTML (0 = все).
+    "max_display_rows": 50,
+    // Include classic pick cards (Editor/Lucky/Worst).
+    // Показывать карточки Editor/Lucky/Worst.
+    "picks_enabled": true,
+    // Show LLM/plain summaries under titles.
+    // Показывать сводки (LLM/простой) под заголовком.
+    "show_summaries": true,
+    // Public URL used in Telegram digest (optional).
+    // Публичная ссылка для дайджеста в Telegram (опционально).
+    "public_url": "",
+    "url": ""
+  },
+  // ===========================================================================
+  // LLM SETTINGS / НАСТРОЙКИ LLM
+  // ===========================================================================
+  "llm": {
+    "providers": {
+      "deepseek": {
+        "type": "openai-compatible",
+        "base_url": "https://api.deepseek.com/v1",
+        "default_model": "deepseek-chat",
+        "timeout_sec": 60,
+        "auth_key_path": [
+          "keys",
+          "llm_api_key"
+        ]
+      },
+      "ollama": {
+        "type": "ollama",
+        "base_url": "http://127.0.0.1:11434",
+        "default_model": "gemma3:1b",
+        "timeout_sec": 30
+      },
+      "hydra": {
+        "type": "openai-compatible",
+        "base_url": "https://api.hydraai.ru/v1",
+        // Default model for this provider (can be overridden per operation)
+        // Модель по умолчанию для этого провайдера (можно переопределить в операции)
+        // Available models: gpt-4o-mini, gpt-4o, claude-3.5-sonnet, gemini-1.5-pro, etc.
+        // Доступные модели: gpt-4o-mini, gpt-4o, claude-3.5-sonnet, gemini-1.5-pro, и т.д.
+        "default_model": "gpt-4o-mini",
+        "timeout_sec": 60,
+        "auth_key_path": [
+          "keys",
+          "hydra_api_key"
+        ]
+      }
+    },
+    // LLM Operations: Logical operation → provider/model mapping (FR-5.5)
+    // Each operation maps to a specific tier or feature in the pipeline
+    "operations": {
+      // FR-5.1 Tier 3: Remote summary for final top N vacancies
+      "summary.remote": {
+        "provider": "deepseek",
+        "model": "deepseek-chat",
+        "language": "auto"
+      },
+      // FR-5.1 Tier 1: Local summary for ALL BASE_SET items
+      "summary.local": {
+        "provider": "ollama",
+        "model": "gemma3:1b"
+      },
+      // FR-5.3: Pick "why" explanations (Editor's Choice)
+      "picks.ec_why": {
+        "provider": "deepseek",
+        "model": "deepseek-chat"
+      },
+      // FR-5.3: Pick "why" explanations (Worst)
+      "picks.worst_why": {
+        "provider": "deepseek",
+        "model": "deepseek-chat"
+      },
+      // FR-5.3: Pick "why" explanations (Lucky)
+      "picks.lucky_why": {
+        "provider": "deepseek",
+        "model": "deepseek-chat"
+      },
+      // FR-9.1: CV keyword extraction
+      "cv_keywords": {
+        "provider": "hydra",
+        "model": "solar-pro-2"
+      },
+      // FR-5.4: Culture risk assessment
+      "culture_risk": {
+        "provider": "deepseek",
+        "model": "deepseek-chat"
+      },
+      "strategy.analysis": {
+        "provider": "deepseek",
+        "model": "deepseek-chat"
+      },
+      // FR-8.x: Telegram balance check
+      "notify.balance": {
+        "provider": "deepseek",
+        "model": "deepseek-chat"
+      },
+      // FR-5.1 Tier 2: Remote rescoring for ALL BASE_SET items
+      "ranking.remote": {
+        "provider": "hydra",
+        "model": "qwen3-235b-a22b",
+        "temperature": 0.0,
+        "max_tokens": 512
+      }
+      // ⚠️ OBSOLETE: Not in FR-5.1 tiered architecture - commenting out for future removal
+      // "ranking.premium": {
+      //   "provider": "hydra",
+      //   "model": "gpt-4o",
+      //   "temperature": 0.0,
+      //   "max_tokens": 1000
+      // },
+      // ⚠️ OBSOLETE: Not in FR-5.1 tiered architecture - commenting out for future removal
+      // "summary.premium": {
+      //   "provider": "deepseek",
+      //   "model": "deepseek-chat",
+      //   "temperature": 0.2,
+      //   "max_tokens": 512
+      // }
+    },
+    // ⚠️ LEGACY: Pre-refactor config for backward compatibility - mark for removal after stabilization
+    "service": {
+      "type": "openai-compatible",
+      "base_url": "https://api.deepseek.com/v1",
+      "model": "deepseek-chat",
+      "timeout_sec": 60
+    },
+    "enabled_default": true,
+    // Maximum vacancies processed by LLM helpers (0 = unlimited).
+    // Максимум вакансий для LLM (0 = без ограничений).
+    "max_items": 0,
+    // Summaries: how many top rows without one to build per run.
+    // Сводки: сколько верхних строк без summary обрабатывать за запуск.
+    "summary_top_n": 10,
+    "pick_top_n": 10,
+    "gate_score_min": 0.0,
+    // Tiered processing settings
+    // Настройки многоуровневой обработки
+    "tiered": {
+      "top_n_remote": 10,
+      "top_n_external": 10
+    },
+    // LLM Prompts Configuration
+    // Настройки промптов для LLM
+    "prompts": {
+      "summary": {
+        // Tier-specific prompts (FR-5.1, SDD-6.2)
+        "remote": {
+          "system_en": "You are a concise job summarizer. Reply in English with 1–2 crisp sentences highlighting responsibilities, scope, and tech; skip benefits. Never repeat job title or company.",
+          "user_en": "Summarize the vacancy (max 2 sentences, <40 words). Focus on responsibilities, scope, and domain. Text:\\n{{text}}",
+          "system_ru": "Ты — краткий аналитик вакансий. Дай 1–2 предложения про обязанности, масштаб и стек, без соцпакета и без повторения названия должности/компании.",
+          "user_ru": "Сформулируй краткое описание вакансии (до 2 предложений, <40 слов). Покажи обязанности, масштаб и домен. Текст:\\n{{text}}"
+        },
+        "local": {
+          "system_ru": "Ты — аналитик вакансий. Дай одно очень короткое описание (1 предложение, максимум 25 слов): обязанности, технологии, масштаб. Формат: ТОЛЬКО простой текст в одну строку, БЕЗ markdown, списков и заголовков. Никаких вводных фраз вроде \"Краткое описание\", \"Обязанности\" или \"Вот описание вакансии\" — сразу пиши суть роли. Без соцпакета и без повторения названия должности или компании.",
+          "system_en": "You are a job analyst. Give one very short description (1 sentence, max 25 words): responsibilities, technologies, scope. Format: PLAIN TEXT ONLY on a single line, NO markdown, lists or headings. Do NOT use lead‑ins like \"Short description\", \"Responsibilities\" or \"Here is the vacancy\" — start directly with the role content. No benefits, no job title or company name.",
+          "user_ru": "Сформулируй краткое описание (1 предложение, до 25 слов) про обязанности, технологии и масштаб. Ответ — одной строкой, без вводных фраз, без markdown. Текст:\\n{{text}}",
+          "user_en": "Write a single-sentence summary (max 25 words) covering responsibilities, tech stack and scope. Answer as one line, no lead-ins, no markdown. Text:\\n{{text}}"
+        },
+        // Fallback values (legacy consumers)
+        "system_ru": "Ты — краткий аналитик вакансий. Дай 1–2 предложения про обязанности, масштаб и стек, без соцпакета и без повторения названия должности/компании.",
+        "system_en": "You are a concise job summarizer. Reply in English with 1–2 crisp sentences highlighting responsibilities, scope, and tech; skip benefits. Never repeat job title or company.",
+        "user_ru": "Сформулируй краткое описание вакансии (до 2 предложений, <40 слов). Покажи обязанности, масштаб и домен. Текст:\\n{{text}}",
+        "user_en": "Summarize the vacancy (max 2 sentences, <40 words). Focus on responsibilities, scope, and domain. Text:\\n{{text}}"
+      },
+      "ec_why": {
+        "system_ru": "Ты — прямолинейный карьерный советник. За 1–2 коротких предложения объясни, почему эта роль — лучший стратегический матч для кандидата. Не повторяй должность или компанию. ОТВЕТЬ СТРОГО В ВИДЕ JSON без комментариев и текста вокруг: {\\\"pick\\\": \\\"<ID вакансии>\\\", \\\"why\\\": \\\"<Текст>\\\"}",
+        "system_en": "You are a blunt career advisor. In 1–2 short sentences, explain why this role is the best strategic match for the candidate. Do not repeat the job title or company. ANSWER STRICTLY AS JSON with no comments or surrounding text: {\\\"pick\\\": \\\"<Vacancy ID>\\\", \\\"why\\\": \\\"<Text>\\\"}"
+      },
+      "lucky_why": {
+        "system_ru": "Объясни за 1–2 коротких предложения, почему эта роль — удачный high‑upside wildcard: асимметричный потенциал, повод рискнуть. Не повторяй должность или компанию. ОТВЕТЬ СТРОГО В ВИДЕ JSON без комментариев и текста вокруг: {\\\"pick\\\": \\\"<ID вакансии>\\\", \\\"why\\\": \\\"<Текст>\\\"}",
+        "system_en": "Explain in 1–2 short sentences why this role is a high‑upside wildcard with asymmetric potential worth a punt. Do not repeat job title or company. ANSWER STRICTLY AS JSON with no comments or surrounding text: {\\\"pick\\\": \\\"<Vacancy ID>\\\", \\\"why\\\": \\\"<Text>\\\"}"
+      },
+      "worst_why": {
+        "system_ru": "За 1–2 коротких предложения с сухой иронией объясни, почему эта вакансия — худший матч: красные флаги, тупиковые риски. Не повторяй должность или компанию. ОТВЕТЬ СТРОГО В ВИДЕ JSON без комментариев и текста вокруг: {\\\"pick\\\": \\\"<ID вакансии>\\\", \\\"why\\\": \\\"<Текст>\\\"}",
+        "system_en": "In 1–2 short sentences with dry sarcasm, explain why this vacancy is the worst fit: red flags and cul‑de‑sac risks. Do not repeat job title or company. ANSWER STRICTLY AS JSON with no comments or surrounding text: {\\\"pick\\\": \\\"<Vacancy ID>\\\", \\\"why\\\": \\\"<Text>\\\"}"
+      },
+      // Cultural risk assessment prompts (used by LLM-MeasureCultureRisk)
+      // Промпты для оценки культурного риска (используются в LLM-MeasureCultureRisk)
+      "culture_risk": {
+        "system_en": "Rate cultural/political risk on 0..1 (0=no concern, 1=high risk, e.g. state-linked, propaganda, sanctioned). Return JSON: {\\\"risk\\\":0..1}. Example: {\\\"risk\\\":0.7}",
+        "system_ru": "Оцени культурный/политический риск по шкале 0..1 (0=нет опасений, 1=высокий риск, напр. государственное владение, пропаганда, санкции). Верни JSON: {\\\"risk\\\":0..1}. Пример: {\\\"risk\\\":0.7}",
+        "system": "Rate cultural risk on 0..1. Return JSON: {\\\"risk\\\":0..1}"
+      },
+      "strategy_analysis": {
+        "system": "You are an elite Executive Career Strategist and Organizational Psychologist. Your client is a senior executive (C-Suite/VP level) targeting high-impact roles. Your goal is to analyze a specific Vacancy and the Candidate’s CV to generate three distinct outputs that position the candidate not as an \\\"applicant,\\\" but as the \\\"solution to a strategic bottleneck.\\\"",
+        "user": "### STEP 1: FORENSIC DIAGNOSIS (Internal Thought Process)\\nBefore writing, perform a \\\"Gap Analysis\\\" of the Vacancy to find the **Implicit Executive Pain**.\\n* *If JD says:* \\\"Transform legacy culture\\\" -> *The Pain is:* Inertia, resistance to change, and likely turnover issues.\\n* *If JD says:* \\\"Scale operations globally\\\" -> *The Pain is:* Process breakage, dilution of quality, and fragmentation of command.\\n* *If JD says:* \\\"Drive profitability\\\" -> *The Pain is:* Bloated costs, low margin, or inefficient unit economics.\\n\\n**The \\\"Executive Double-Bind\\\" Logic:**\\nFor the Decision Maker, the choice is not \\\"Hire this person vs. that person.\\\"\\nThe choice is: \\\"Continue tolerating [Implicit Pain] vs. Implement [Candidate's Playbook].\\\"\\n\\n---\\n\\n### OUTPUT 1: THE GATEKEEPER SIGNAL (For Executive Search / HR)\\n*Target:* The Head of Talent or External Recruiter.\\n*Goal:* **Risk Mitigation.** Prove the candidate is the \\\"Safe Bet\\\" so the recruiter feels confident passing the profile up.\\n*Tone:* Professional, precise, compliant, polished.\\n\\n**Structure:**\\n1.  **Confirmation of Fit:** Acknowledgment of the specific mandate (e.g., \\\"Leading the Series B expansion\\\").\\n2.  **The Evidence:** A single sentence linking the candidate's duration/seniority directly to the core requirement.\\n3.  **The \\\"Safety\\\" Hook:** Mention one quantifiable \\\"Turnaround\\\" or \\\"Scale\\\" metric that de-risks the application.\\n4.  **Close:** Standard executive sign-off.\\n\\n---\\n\\n### OUTPUT 2: THE PEER-TO-PEER PITCH (For the CEO / Board / Founder)\\n*Target:* The actual boss.\\n*Goal:* **Strategic Resonance.** Signal that you understand their headache better than they do.\\n*Tone:* High-status, diagnostic, concise. No \\\"I hope,\\\" no \\\"I feel.\\\"\\n*Constraint:* Maximum 150 words.\\n\\n**Structure:**\\n1.  **The Diagnostic Opener:** Do not say \\\"I am applying.\\\" Instead, validate their current strategic stage.\\n    * *Example:* \\\"Scaling a sales org beyond $50M often exposes specific fractures in [Process X]...\\\"\\n2.  **The Value Bridge:** Briefly reference a parallel scenario from the CV.\\n    * *Example:* \\\"When I navigated this transition at [Previous Role], the key leverage point was...\\\"\\n3.  **The \\\"Double-Bind\\\" Close:** Offer a discussion about the *problem*, not the *job*.\\n    * *Example:* \\\"I would welcome a brief exchange on how these operational levers might stabilize your current trajectory. If you are open to it, let's speak.\\\"\\n\\n---\\n\\n### OUTPUT 3: STRATEGIC CV REALIGNMENT\\n*Goal:* Reframe the CV from a \\\"History of Duties\\\" to a \\\"Catalog of Reversals.\\\"\\n\\n1.  **The \\\"North Star\\\" Headline:** Suggest a new CV Headline that speaks directly to the *Implicit Pain* (e.g., instead of \\\"Chief Marketing Officer,\\\" use \\\"CMO: Growth Strategy & CAC Reduction\\\").\\n2.  **Bullet Point Alchemy:** Select 2 generic bullets from the input CV and rewrite them as **\\\"Problem -> Action -> Result\\\"** narratives that mirror the Vacancy's needs.\\n3.  **The Vocabulary of Authority:** List 5 high-impact keywords found in the vacancy that must replace passive language in the CV (e.g., Swap \\\"Managed team\\\" with \\\"Orchestrated realignment\\\").\\n\\n---\\n\\n### RULES\\n* **No Fluff:** Remove adjectives like \\\"passionate,\\\" \\\"motivated,\\\" \\\"visionary.\\\" Use verbs like \\\"Restructured,\\\" \\\"Capitalized,\\\" \\\"Stabilized.\\\"\\n* **No Placeholders:** Fill in the brackets with actual logic derived from the inputs.\\n* **Format:** Use Markdown with clear headers.\\n* **Language:** Native-level, C-Suite English (Neutral/US/UK depending on context).\\n\\n### INPUTS\\n1. **Vacancy Context:**\\n{{vacancy_context}}\\n\\n2. **Candidate Profile:**\\n{{candidate_profile}}"
+      },
+      "strategy_analysis_ru": {
+        "system": "You are an elite Executive Career Strategist and Organizational Psychologist specializing in the Eastern European/CIS market. Your client is a senior executive (C-Suite/VP level) targeting high-impact roles. Your goal is to analyze a specific Vacancy (which may be in English or Russian) and the Candidate’s CV to generate three distinct outputs in **PROFESSIONAL RUSSIAN**.",
+        "user": "### STEP 1: FORENSIC DIAGNOSIS (Internal Thought Process)\\nBefore writing, perform a \\\"Gap Analysis\\\" of the Vacancy to find the **Implicit Executive Pain**.\\n* *If JD says:* \\\"Transform legacy culture\\\" -> *The Pain is:* Inertia, resistance to change (саботаж изменений), and inefficiency.\\n* *If JD says:* \\\"Scale operations\\\" -> *The Pain is:* \\\"Growth Pains\\\" (болезни роста), loss of control, chaos in processes.\\n* *If JD says:* \\\"Drive profitability\\\" -> *The Pain is:* High burn rate, inefficient unit economics (юнит-экономика).\\n\\n**The \\\"Executive Double-Bind\\\" Logic:**\\nFor the Decision Maker, the choice is: \\\"Continue tolerating [Implicit Pain] vs. Implement [Candidate's Playbook].\\\"\\n\\n---\\n\\n### OUTPUT 1: THE GATEKEEPER SIGNAL (For HR / Recruiter)\\n*Target:* Head of Talent / External Recruiter.\\n*Goal:* **Risk Mitigation.** Prove the candidate is a \\\"Safe Bet\\\" (надежный вариант).\\n*Language:* **Russian (Formal/Official style).**\\n\\n**Structure:**\\n1.  **Greeting:** Formal (e.g., \\\"Добрый день,\\\").\\n2.  **Confirmation of Fit:** Acknowledge the mandate (e.g., \\\"Рассмотрел позицию [Role] и задачи по [Core Task].\\\").\\n3.  **The Evidence:** One sentence linking seniority to the requirement.\\n4.  **The \\\"Safety\\\" Hook:** Mention one quantifiable metric (KPI) or specific case that proves you can do the job without training.\\n5.  **Close:** Standard sign-off.\\n\\n---\\n\\n### OUTPUT 2: THE PEER-TO-PEER PITCH (For CEO / Founder / Owner)\\n*Target:* The Decision Maker.\\n*Goal:* **Strategic Resonance.** Signal that you understand the business bottleneck.\\n*Language:* **Russian (Business/Direct - \\\"Деловой стиль\\\").**\\n*Constraint:* Maximum 150 words. No \\\"water\\\" (без воды).\\n\\n**Structure:**\\n1.  **The Diagnostic Opener:** Do not beg for the job. Validate their strategic stage.\\n    * *Concept:* \\\"Scaling beyond X is usually accompanied by [Problem]...\\\"\\n    * *Russian Phrasing Strategy:* Use phrases like \\\"Масштабирование часто вскрывает...\\\" or \\\"В текущих условиях рынка...\\\"\\n2.  **The Value Bridge:** Briefly reference a parallel scenario from the CV.\\n    * *Concept:* \\\"I solved this via [Methodology].\\\"\\n    * *Russian Phrasing Strategy:* \\\"В аналогичной ситуации в [Company] мы решили это через...\\\"\\n3.  **The \\\"Double-Bind\\\" Close:** Offer a discussion about the *problem*.\\n    * *Russian Phrasing Strategy:* \\\"Готов кратко обсудить, как эти механики применимы к вашим текущим вызовам.\\\"\\n\\n---\\n\\n### OUTPUT 3: STRATEGIC CV REALIGNMENT (Russian)\\n*Goal:* Reframe the CV from \\\"Duties\\\" to \\\"Results.\\\"\\n\\n1.  **The \\\"North Star\\\" Headline:** Suggest a new CV Headline in Russian that highlights the specific value (e.g., \\\"COO: Операционная эффективность и M&A\\\").\\n2.  **Bullet Point Alchemy:** Select 2 generic bullets from the input CV and rewrite them in Russian using the **\\\"Problem -> Action -> Result\\\"** format.\\n3.  **The Vocabulary of Authority:** List 5 high-impact Russian keywords found in the vacancy that must be injected into the CV (e.g., \\\"Трансформация,\\\" \\\"EBITDA,\\\" \\\"Вывод на новые рынки\\\").\\n\\n---\\n\\n### RULES\\n* **Language:** **ALL OUTPUTS MUST BE IN RUSSIAN.**\\n* **Tone:** Professional, restrained, authoritative. Avoid excessive adjectives (\\\"уникальный\\\", \\\"амбициозный\\\"). Use verbs of action (\\\"выстроил\\\", \\\"оптимизировал\\\", \\\"внедрил\\\").\\n* **Formatting:** Use Markdown with clear headers.\\n\\n### INPUTS\\n1. **Vacancy Context:**\\n{{vacancy_context}}\\n\\n2. **Candidate Profile:**\\n{{candidate_profile}}\\n\\n### FINAL INSTRUCTION\\nEnsure ALL generated text (Output 1, 2, and 3) is in **RUSSIAN**.",
+    }
+    },
+    // LLM pick pool size (Editor/Lucky/Worst).
+    // Размер пула для выбора Editor/Lucky/Worst.
+    "picks_top_n": 30,
+    // Output language ("auto","en","ru") for summaries.
+    // Язык LLM-резюме ("auto","en","ru").
+    "summary_language": "auto",
+    // Cache TTL for LLM summaries (days).
+    // Время жизни кэша LLM-сводок (в днях).
+    "cache_ttl_days": 7,
+    // Cover letters are generated manually via cover_letter.ps1,
+    // not during automated harvest.
+    // Сопроводительные письма создаются вручную через cover_letter.ps1,
+    // а не в автоматическом прогоне.
+    "cover_letters": {
+      "enabled_default": false,
+      "top_n": 3,
+      "temperature": 0.35,
+      "system_prompt": "You are an executive career coach who writes concise, high-impact cover letters (<= 220 words). Tone: confident, tailored, achievement-focused, no fluff. Goal: sell the candidate as the obvious fit while respecting vacancy language (ru/en) and culture.",
+      "user_instruction": "Use the vacancy details and candidate profile to draft a short cover letter that highlights the best-fit achievements, mirrors the vacancy tone (ru/en), and ends with a confident call to action."
+    },
+    // Debug controls (applied when -Debug is used).
+    // Настройки для отладки (активируются при -Debug).
+    "debug": {
+      "summary_top_n": 5,
+      "picks_top_n": 5
+    },
+    "local": {
+      "enabled": true,
+      "url": "http://127.0.0.1:11434",
+      "model": "gemma3:1b",
+      "timeout_ms": 30000,
+      "weight": 0.0,
+      "min_score": 0,
+      "profile_hint": "ИТ аудит / информационная безопасность / CISA",
+      "prompts": {
+        "summary": {
+          // Tuned to match external quality: strict plain text, no markdown
+          "system_ru": "Ты — аналитик вакансий. Дай одно очень короткое описание (1 предложение, максимум 25 слов): обязанности, технологии, масштаб. Формат: ТОЛЬКО простой текст в одну строку, БЕЗ markdown, списков и заголовков. Не пиши вводные фразы вроде \"Вот краткое описание вакансии\", \"Краткое описание\", \"Обязанности\" — сразу начинай с сути роли. Без соцпакета и без повторения названия должности или компании.",
+          "system_en": "You are a job analyst. Provide one very short description (1 sentence, max 25 words): responsibilities, technologies, scope. Format: PLAIN TEXT ONLY on a single line, NO markdown, bullets or headings. Do not write lead-ins like \"Here is a short description of the vacancy\", \"Short description\", or \"Responsibilities\" — start directly with the content of the role. No benefits, no job title or company.",
+          "user_ru": "Сформулируй ключевые обязанности и стек простым текстом в одну строку (1 предложение, до 25 слов). Без вводных фраз, без markdown, только суть роли. Текст:\\n{{desc}}",
+          "user_en": "Summarize key responsibilities and tech stack in plain text, single line (1 sentence, max 25 words). No lead-ins, no markdown, just the role content. Text:\\n{{desc}}",
+          "alignment_hint": ""
+        },
+        "relevance": {
+          "system": "Ты — ассистент подбора. Оцени релевантность вакансии профилю кандидата по шкале 0–5. Ответь только числом.",
+          "user": "Профиль: {{profile}}\\n\\nВакансия: {{title}}\\n\\nОписание: {{desc}}\\n\\nОтветь только числом 0–5"
+        }
+      }
+    },
+    "summary": {
+      "enabled": true,
+      "top_n": 20,
+      "for_picks": true,
+      "top_k": 10,
+      "mid_k": 0,
+      "ttl_days": 14
+    }
+  },
+  // ===========================================================================
+  // SCRAPING SETTINGS / СКРАПИНГ
+  // ===========================================================================
+  "scrape": {
+    "enabled": true,
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "timeout_sec": 15,
+    "jitter_base_ms": 140,
+    "jitter_random_ms": 240,
+    "delay_ms": 0,
+    "prefetch_enabled": true,
+    "prefetch_batch_size": 20,
+    "prefetch_throttle_ms": 50,
+    "prefetch_skip_debug": true
+  },
+  // ===========================================================================
+  // LEARNING SETTINGS / НАСТРОЙКИ САМО-ОБУЧЕНИЯ
+  // ===========================================================================
+  "learn": {
+    // Self-learning of skill vocabulary.
+    // Самообучение словаря навыков.
+    "enabled_default": true,
+    "top_skills": 20
+  },
+  // ===========================================================================
+  // CACHE SETTINGS / НАСТРОЙКИ КЭША
+  // ===========================================================================
+  "cache": {
+    // TTL (time to live) in days for various cache types
+    "vacancy_days": 7,
+    "employer_days": 30,
+    "llm_days": 14,
+    "area_days": 90,
+    "resume_days": 1,
+    "employer_rating_days": 30,
+    // Root directory for caches (vacancies, employers, llm, etc.).
+    // If empty or not specified, defaults to data/cache/ under the repo root.
+    "root": ""
+  },
+  "employer": {
+    "rating_scrape": {
+      // Enable scraping employer ratings from HH website (API doesn't provide them)
+      "enabled": true,
+      // Only scrape ratings for top N vacancies (by score) to limit requests
+      "top_n": 10,
+      // Cache scraped ratings for this many days
+      "cache_ttl_days": 30
+    }
+  },
+  // ===========================================================================
+  // NOTIFICATIONS / УВЕДОМЛЕНИЯ
+  // ===========================================================================
+  "telegram": {
+    "bot_token": "",
+    "chat_id": "",
+    "digest_top": 3,
+    "ping_message": "Отчёт обновлён / Report refreshed"
+  },
+  // ==========================================================================
+  // SKILLS SETTINGS / НАСТРОЙКИ НАВЫКОВ
+  // ==========================================================================
+  "skills": {
+    // Enable skills-based scoring.
+    // Включить оценку по навыкам.
+    "enabled": true,
+    // Path to skills vocabulary JSON.
+    // Путь к JSON-файлу словаря навыков.
+    "vocab_path": "data/skills_vocab.json",
+    // Minimum score required to count (0..1).
+    // Минимальный порог для учёта (0..1).
+    "match_threshold": 0.35,
+    // Max terms per bucket to consider (0 = unlimited).
+    // Максимум терминов в каждом бакете (0 = без ограничений).
+    "max_vocab_terms": 8000,
+    // Learning controls (used by future auto-enrichment).
+    // Параметры обучения (для будущего авто‑обогащения).
+    "learning": {
+      "enabled": false,
+      "min_occurrences": 2,
+      "max_new_terms": 50
+    }
+  },
+  // ==========================================================================
+  // CV SETTINGS / НАСТРОЙКИ CV
+  // ==========================================================================
+  "cv": {
+    // Enable CV-based scoring and profile management
+    // Включить оценку на основе CV и управление профилем
+    "enabled": true,
+    // where core skills come from:
+    // откуда брать основные навыки:
+    // "auto_hh"  – prefer HH resume, fall back to file
+    // "auto_hh"  – предпочитать резюме HH, откат на файл
+    // "hh_only"  – ONLY HH resume, ignore file
+    // "hh_only"  – ТОЛЬКО резюме HH, игнорировать файл
+    // "file"     – ONLY local cv.json (offline / what-if)
+    // "file"     – ТОЛЬКО локальный cv.json (офлайн / сценарии)
+    // "hybrid"   – merge hh + file according to merge_mode
+    // "hybrid"   – объединять hh + файл согласно merge_mode
+    "source": "auto_hh",
+    // local profile file
+    // локальный файл профиля
+    "file_path": "data/inputs/cv.json",
+    // optional override (otherwise: discover "last active, published")
+    // опциональное переопределение (иначе: найти "последнее активное, опубликованное")
+    "hh_resume_id": null,
+    // how to merge skills when both exist
+    // как объединять навыки при наличии обоих источников
+    // "augment"  – hh skills + extra from file
+    // "augment"  – навыки HH + дополнительные из файла
+    // "replace"  – prefer file skills when present
+    // "replace"  – предпочитать навыки из файла при наличии
+    "merge_mode": "augment",
+    // Recent experience window (entries) for compact CV payload
+    // Окно последних мест работы (кол-во записей) для компактного CV
+    "cv_recent_experience_window": 3,
+    // cv scoring weight knob (used by scoring module)
+    // регулятор веса CV для скоринга (используется модулем оценки)
+    "weight": 1.0
+  },
+  // ==========================================================================
+  // SCORING WEIGHTS / ВЕСА ОЦЕНОК
+  // ==========================================================================
+  "scoring": {
+    "base_currency": "RUB",
+    "weights": {
+      "skills": 0.4,
+      "salary": 0.3,
+      "experience": 0.2,
+      "recency": 0.1
+    },
+    "recency": {
+      "tau_days": 7
+    },
+    "filters": {
+      "blacklist_employers": [],
+      "enforce_remote_if_preferred": true
+    }
+  },
+  // ==========================================================================
+  // RANKING / РАНЖИРОВАНИЕ
+  // ==========================================================================
+  "ranking": {
+    "top_n_report": 70,
+    "candidate_multiplier": 1.0,
+    "blend": {
+      "baseline_weight": 0.4,
+      "qwen_weight": 0.5,
+      "salary_weight": 0.1
+    }
+  },
+  // ===========================================================================
+  // VERSION TAG / МЕТКА ВЕРСИИ
+  // ===========================================================================
+  "version": "2025.11"
+}
