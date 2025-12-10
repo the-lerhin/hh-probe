@@ -174,9 +174,10 @@ It interacts with:
 - `Get-VacancyDetail` — `/vacancies/{id}`.
 
 - **Currency Fetching:**
-  - `Get-ExchangeRates` — Fetches currency rates (e.g., from CBR daily JSON) and caches them via `hh.cache`.
-  - Returns a hashtable with ISO currency codes as keys and numeric rates as values, normalized to the configured base currency (e.g., `@{ RUB = 1.0; USD = 95.5; EUR = 101.2 }`).
-  - MUST be called once per run and reused across the scoring phase (no per-vacancy HTTP calls).
+          - `Get-ExchangeRates` — Fetches currency rates (e.g., from CBR daily JSON) and caches them via `hh.cache`.
+          - Returns a hashtable with ISO currency codes as keys and numeric rates as values, normalized to the configured base currency (e.g., `@{ RUB = 1.0; USD = 95.5; EUR = 101.2 }`).
+          - Currency codes MUST be displayed as abbreviations (e.g., 'RUB', 'USD') rather than symbols (e.g., ₽, $).
+          - MUST be called once per run and reused across the scoring phase (no per-vacancy HTTP calls).
 
 **HH Vacancy Identity & URL Handling:**  
 - Web Recommendations scraping MUST collect vacancy **URLs only** from `hh.ru/search/vacancy?resume={id}` and immediately normalize them to numeric vacancy IDs (parsed from `https://hh.ru/vacancy/{id}` or equivalent patterns).  

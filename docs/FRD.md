@@ -300,13 +300,14 @@ The heuristic score (0.0 to 1.0) MUST be a weighted sum of the following compone
    - Both CV coverage (`|I| / |CV|`) and vacancy coverage (`|I| / |Vacancy|`) MUST contribute to the component score.
 
 2. **Salary Match (Currency-Aware):**
-   - All amounts MUST be normalized to a `base_currency` (e.g., RUB) using cached exchange rates.
-   - Exchange rates MUST be obtained once per run and reused via cache (see caching section); scoring MUST NOT fetch rates directly.
-   - Missing salaries MUST be interpreted with **source-aware nuance**:
-     - For `Source = "getmatch"` → treat as high-trust hidden salary (neutral-to-positive contribution).
-     - For `Source = "hh"` AND senior roles (e.g., `experience.id = "moreThan6"`) → treat as common practice (neutral-to-positive).
-     - For `Source = "hh"` AND non-senior roles with no salary → treat as mildly negative/uncertain.
-   - Explicit lowball offers (normalized max below the user's minimum expectation) MUST receive a 0.0 salary component.
+           - All amounts MUST be normalized to a `base_currency` (e.g., RUB) using cached exchange rates.
+           - Exchange rates MUST be obtained once per run and reused via cache (see caching section); scoring MUST NOT fetch rates directly.
+           - Currency codes MUST be displayed as abbreviations (e.g., 'RUB', 'USD') rather than symbols (e.g., ₽, $).
+           - Missing salaries MUST be interpreted with **source-aware nuance**:
+             - For `Source = "getmatch"` → treat as high-trust hidden salary (neutral-to-positive contribution).
+             - For `Source = "hh"` AND senior roles (e.g., `experience.id = "moreThan6"` → treat as common practice (neutral-to-positive).
+             - For `Source = "hh"` AND non-senior roles with no salary → treat as mildly negative/uncertain.
+           - Explicit lowball offers (normalized max below the user's minimum expectation) MUST receive a 0.0 salary component.
 
 3. **Experience / Seniority Match:**
    - For HH vacancies, `experience.id` MUST be mapped to CV total experience and/or seniority bucket.

@@ -392,11 +392,7 @@ function Format-SalaryText {
   try { $to = $Salary.to } catch {}
   try { $sym = [string]($Salary.symbol ?? '') } catch {}
   if ([string]::IsNullOrWhiteSpace($sym) -and $Salary.currency) { 
-    if (Get-Command -Name 'hh.util\Get-SalarySymbol' -ErrorAction SilentlyContinue) {
-      $sym = hh.util\Get-SalarySymbol -Currency $Salary.currency
-    } else {
-      $sym = $Salary.currency 
-    }
+    $sym = $Salary.currency 
   }
   
   $fmtCulture = [System.Globalization.CultureInfo]::InvariantCulture.Clone()

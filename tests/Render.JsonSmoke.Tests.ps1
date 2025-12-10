@@ -16,7 +16,7 @@ Describe 'JSON Render LLM meta smoke' {
     $row.Employer = (New-Object -TypeName EmployerInfo -Property @{ name = 'Acme' })
     $row.Country = 'RU'
     $row.City = 'Moscow'
-    $row.Salary = (New-Object -TypeName SalaryInfo -Property @{ text = '100 000 ₽' })
+    $row.Salary = (New-Object -TypeName SalaryInfo -Property @{ text = '100 000 RUR' })
     $row.PublishedAtUtc = [Nullable[datetime]]::new((Get-Date).ToUniversalTime())
     $row.Score = 0.5
     $row.Meta = New-Object -TypeName MetaInfo
