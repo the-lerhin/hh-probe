@@ -29,7 +29,8 @@ Describe 'Skills view-model wiring' {
   }
 
   It 'maps skills_score from typed row and fills present/recommended from MatchedVacancy/CV or key_skills fallback' {
-    $vac = [pscustomobject]@{ id='sk-v2'; name='Engineer'; area=@{ name='Москва' }; description='kotlin docker'; key_skills=@('kotlin','docker','sql') ; published_at=(Get-Date).AddDays(-2).ToString('s') }
+    # Mocking key_skills as objects like HH API returns
+    $vac = [pscustomobject]@{ id='sk-v2'; name='Engineer'; area=@{ name='Москва' }; description='kotlin docker'; key_skills=@([pscustomobject]@{ name='kotlin' }, [pscustomobject]@{ name='docker' }, [pscustomobject]@{ name='sql'}) ; published_at=(Get-Date).AddDays(-2).ToString('s') }
     $row = Build-CanonicalRowTyped -Vacancy $vac -NoDetail
     $proj = Get-ReportProjection -Rows @($row)
     $r = $proj.rows[0]
