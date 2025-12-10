@@ -1,6 +1,6 @@
 using module ./hh.models.psm1
 # hh.notify.psm1 — Telegram notification helpers
-#Requires -Version 7.5
+#Requires -Version 7.4
 
 try {
   if (-not (Get-Module -Name 'hh.config')) {

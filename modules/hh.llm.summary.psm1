@@ -448,11 +448,15 @@ function Get-LocalSummaryForVacancy {
   )
   if ($env:HH_TEST -eq '1') {
     $mock = [pscustomobject]@{ summary = 'local summary'; language = 'ru'; model = 'local-test'; source = 'local' }
-    return (if ($AsObject) { $mock } else { [string]$mock.summary })
+    if ($AsObject) { return $mock } else { return [string]$mock.summary }
   }
-  if ([string]::IsNullOrWhiteSpace($VacancyText) -and -not $Vacancy) { return (if ($AsObject) { $null } else { '' }) }
+  if ([string]::IsNullOrWhiteSpace($VacancyText) -and -not $Vacancy) {
+    if ($AsObject) { return $null } else { return '' }
+  }
   $result = Invoke-CanonicalSummaryOperation -Operation 'summary.local' -BodyText ($VacancyText ?? '') -VacancyTitle ($Vacancy?.Title ?? '') -MaxTokens $MaxTokens
-  if (-not $result) { return (if ($AsObject) { $null } else { '' }) }
+  if (-not $result) {
+    if ($AsObject) { return $null } else { return '' }
+  }
   if ($AsObject) { return $result }
   return [string]$result.summary
 }

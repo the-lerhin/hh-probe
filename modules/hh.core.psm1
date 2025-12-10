@@ -1,5 +1,5 @@
 # hh.core.psm1 — shared pipeline helpers
-#Requires -Version 7.5
+#Requires -Version 7.4
 
 function New-HHPipelineState {
   param(

@@ -1,5 +1,5 @@
 # hh.http.psm1 — HTTP client module with enhanced error handling and logging
-#Requires -Version 7.5
+#Requires -Version 7.4
 
 # HTTP request statistics
 $script:HttpStats = @{
