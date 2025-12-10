@@ -1,6 +1,6 @@
 # hh.report.psm1 — ReportProjection builder (typed-only CanonicalVacancy)
 using module ./hh.models.psm1
-#Requires -Version 7.5
+#Requires -Version 7.4
 
 <#
 .SYNOPSIS

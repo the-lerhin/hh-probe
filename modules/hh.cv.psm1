@@ -1,5 +1,5 @@
 # hh.cv.psm1 — CV profile management and effective profile resolution
-#Requires -Version 7.5
+#Requires -Version 7.4
 
 # Import dependencies
 # Dependencies are managed by the entry script (hh.ps1).

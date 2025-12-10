@@ -1,5 +1,5 @@
 # Summaries.Tiered.Tests.ps1
-#Requires -Version 7.5
+#Requires -Version 7.4
 
 Import-Module -Name (Join-Path $PSScriptRoot '..' 'modules' 'hh.pipeline.psm1') -Force -DisableNameChecking
 Import-Module -Name (Join-Path $PSScriptRoot '..' 'modules' 'hh.llm.summary.psm1') -Force -DisableNameChecking
@@ -19,6 +19,7 @@ Describe 'Tiered Summaries Projection' -Tag @('FR-5.1', 'FR-5.8', 'SDD-6.2', 'un
     It 'projects local summary when remote is missing' {
         $c = New-TestCanon 'v1'
         $c.Meta.summary.text = 'local summary'
+        $c.Summary = 'local summary' # Pipeline syncs these
         $c.Meta.summary.source = 'local'
         $c.Meta.summary_source = 'local'
         $c.Meta.local_summary = @{ model = 'gemma' }
@@ -26,7 +27,7 @@ Describe 'Tiered Summaries Projection' -Tag @('FR-5.1', 'FR-5.8', 'SDD-6.2', 'un
         # Simulate projection
         $p = Get-ReportProjection -Rows @($c)
         
-        $row = $p[0]
+        $row = $p.rows[0]
         
         $row.summary | Should -Be 'local summary'
         $row.summary_source | Should -Be 'local'
@@ -37,6 +38,7 @@ Describe 'Tiered Summaries Projection' -Tag @('FR-5.1', 'FR-5.8', 'SDD-6.2', 'un
     It 'projects remote summary when available' {
         $c = New-TestCanon 'v2'
         $c.Meta.summary.text = 'remote summary text'
+        $c.Summary = 'remote summary text' # Pipeline syncs these
         $c.Meta.summary.source = 'remote'
         $c.Meta.summary_source = 'remote'
         $c.Meta.summary_model = 'gpt-4o'

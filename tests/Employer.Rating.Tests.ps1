@@ -1,5 +1,5 @@
 # Employer.Rating.Tests.ps1
-#Requires -Version 7.5
+#Requires -Version 7.4
 
 Import-Module -Name (Join-Path $PSScriptRoot '..' 'modules' 'hh.pipeline.psm1') -Force -DisableNameChecking
 Import-Module -Name (Join-Path $PSScriptRoot '..' 'modules' 'hh.fetch.psm1') -Force -DisableNameChecking

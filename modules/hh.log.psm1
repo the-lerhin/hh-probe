@@ -1,5 +1,5 @@
 # hh.log.psm1 — Structured logging module using PSFramework
-#Requires -Version 7.5
+#Requires -Version 7.4
 #Requires -Module PSFramework
 
 <#

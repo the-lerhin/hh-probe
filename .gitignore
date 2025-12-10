@@ -165,3 +165,5 @@ Pester.xml
 # End of .gitignore
 # ========================
 
+pwsh/
+powershell.tar.gz

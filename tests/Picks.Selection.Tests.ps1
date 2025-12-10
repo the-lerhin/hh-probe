@@ -1,5 +1,5 @@
 # Picks.Selection.Tests.ps1 — integration-style tests for EC/Worst/Lucky selection using mocks
-#Requires -Version 7.5
+#Requires -Version 7.4
 Import-Module -Name (Join-Path $PSScriptRoot '..' 'modules' 'hh.pipeline.psm1') -Force -DisableNameChecking
 Import-Module -Name (Join-Path $PSScriptRoot '..' 'modules' 'hh.llm.psm1') -Force -DisableNameChecking
 Import-Module -Name (Join-Path $PSScriptRoot '..' 'modules' 'hh.util.psm1') -Force -DisableNameChecking

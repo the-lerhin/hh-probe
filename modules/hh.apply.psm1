@@ -1,5 +1,5 @@
 # hh.apply.psm1 — Advanced Apply Module (CV Tuning + AI Cover Letter + One-Click Apply)
-#Requires -Version 7.5
+#Requires -Version 7.4
 
 using module ./hh.models.psm1
 
