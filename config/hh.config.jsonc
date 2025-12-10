@@ -34,28 +34,28 @@
   "keys": {
     // HeadHunter OAuth token (required)
     // OAuth токен HeadHunter (обязательно)
-    "hh_token": "",
+    "hh_token"\s*:\s*"[^"",
     // HeadHunter XSRF token (optional, for cookie-based auth)
     // XSRF токен HeadHunter (опционально, для авторизации через cookie)
-    "hh_xsrf": "",
+    "hh_xsrf"\s*:\s*"[^"",
     // Generic LLM API key (OpenAI-compatible).
     // Универсальный ключ API LLM (OpenAI-совместимый).
-    "llm_api_key": "",
+    "llm_api_key"\s*:\s*"[^"",
     // HydraAI API key (Multi-model provider)
     // Ключ API HydraAI (Мульти-модельный провайдер)
-    "hydra_api_key": "",
+    "hydra_api_key"\s*:\s*"[^"",
     // Telegram bot token for notifications (Digest/Ping).
     // Токен бота Telegram для уведомлений (Digest/Ping).
-    "telegram_bot_token": "",
+    "telegram_bot_token"\s*:\s*"[^"",
     // Telegram chat id for notifications.
     // ID чата Telegram для уведомлений.
-    "telegram_chat_id": "",
+    "telegram_chat_id"\s*:\s*"[^"",
     // OAuth Client ID (for HH API)
-    "hh_client_id": "",
+    "hh_client_id"\s*:\s*"[^"",
     // OAuth Client Secret
-    "hh_client_secret": "",
+    "hh_client_secret"\s*:\s*"[^"",
     // OAuth Redirect URI
-    "hh_redirect_uri": ""
+    "hh_redirect_uri"\s*:\s*"[^""
   },
   // ===========================================================================
   // API CLIENT SETTINGS / НАСТРОЙКИ API-КЛИЕНТА
@@ -157,8 +157,8 @@
       "web_scraping": {
         "enabled": true,
         // TODO: cookie_hhtoken MUST be provided via environment before pushing to git
-        "cookie_hhtoken": "",
-        "_xsrf": "",
+        "cookie_hhtoken"\s*:\s*"[^"",
+        "_xsrf"\s*:\s*"[^"",
         "pages": 5,
         "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
       }
@@ -258,8 +258,8 @@
       },
       // FR-5.1 Tier 1: Local summary for ALL BASE_SET items
       "summary.local": {
-        "provider": "ollama",
-        "model": "gemma3:1b"
+        "provider": "hydra",
+        "model": "gpt-5-nano"
       },
       // FR-5.3: Pick "why" explanations (Editor's Choice)
       "picks.ec_why": {
@@ -501,8 +501,8 @@
   // NOTIFICATIONS / УВЕДОМЛЕНИЯ
   // ===========================================================================
   "telegram": {
-    "bot_token": "",
-    "chat_id": "",
+    "bot_token"\s*:\s*"[^"",
+    "chat_id"\s*:\s*"[^"",
     "digest_top": 3,
     "ping_message": "Отчёт обновлён / Report refreshed"
   },
@@ -604,3 +604,4 @@
   // ===========================================================================
   "version": "2025.11"
 }
+
