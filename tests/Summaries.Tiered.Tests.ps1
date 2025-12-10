@@ -26,7 +26,7 @@ Describe 'Tiered Summaries Projection' -Tag @('FR-5.1', 'FR-5.8', 'SDD-6.2', 'un
         # Simulate projection
         $p = Get-ReportProjection -Rows @($c)
         
-        $row = $p[0]
+        $row = $p.rows[0]
         
         $row.summary | Should -Be 'local summary'
         $row.summary_source | Should -Be 'local'

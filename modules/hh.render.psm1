@@ -966,7 +966,7 @@ function Render-JsonReport {
     [string]$OutputsRoot
   )
   Write-Log -Message "[Render/JSON] begin" -Level Verbose -Module 'Render'
-  $repoRoot = Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent
+  $repoRoot = Split-Path -Path $PSScriptRoot -Parent
   $root = if (-not [string]::IsNullOrWhiteSpace($OutputsRoot)) { $OutputsRoot } else { Join-Path $repoRoot 'data/outputs' }
   try { New-Item -ItemType Directory -Force -Path $root | Out-Null } catch {}
 
@@ -1017,7 +1017,9 @@ function Render-JsonReport {
       $serializerUsed = 'newtonsoft'
     }
     else {
-      ($convertedRows | ConvertTo-Json -Depth 8) | Out-File -FilePath $jsonPath -Encoding utf8
+      $json = ($convertedRows | ConvertTo-Json -Depth 8)
+      if (-not $json) { $json = '[]' }
+      $json | Out-File -FilePath $jsonPath -Encoding utf8
       $serializerUsed = 'converttojson'
     }
     Write-Log -Message ("[Render/JSON] written: {0}" -f $jsonPath) -Level Output -Module 'Render'

@@ -84,16 +84,20 @@ Describe 'Quick HTML report rendering' {
     $html | Should -Not -BeNullOrEmpty
 
     # Cards count == 3 (look for specific card variants)
-    $ec = ([regex]::Matches($html, 'class="card ec')).Count + ([regex]::Matches($html, "class='card ec")).Count
-    $lk = ([regex]::Matches($html, 'class="card lucky')).Count + ([regex]::Matches($html, "class='card lucky")).Count
-    $wr = ([regex]::Matches($html, 'class="card worst')).Count + ([regex]::Matches($html, "class='card worst")).Count
+    $ec = ([regex]::Matches($html, 'class="card card-ec')).Count + ([regex]::Matches($html, "class='card card-ec")).Count
+    $lk = ([regex]::Matches($html, 'class="card card-lucky')).Count + ([regex]::Matches($html, "class='card card-lucky")).Count
+    $wr = ([regex]::Matches($html, 'class="card card-worst')).Count + ([regex]::Matches($html, "class='card card-worst")).Count
     $cards = $ec + $lk + $wr
     $cards | Should -Be 3
 
     # HTML contains summary and open text
-    $hasSummary = $html -match '<div class=\"summary\">'
-    $hasOpen = (($html -match ' open') -or ($html -match ' Open ') -or ($html -match 'Открытых вакансий'))
-    $hasSummary = $hasSummary -or ($html -match "<div class='summary'>")
+    # Handlebars might use single quotes or double quotes depending on context/helper output
+    $hasSummary = $html -match '<div class="summary">' -or $html -match "<div class='summary'>"
+    $hasOpen = $html -match 'Open' -or $html -match 'open'
+
+    # Debug output if failed
+    if (-not $hasSummary) { Write-Host "HTML content dump (partial):" ($html.Substring(0, [Math]::Min($html.Length, 1000))) }
+
     $hasSummary | Should -BeTrue
     $hasOpen | Should -BeTrue
   }

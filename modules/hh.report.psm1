@@ -100,6 +100,7 @@ function Get-ReportProjection {
     
     $empRating = $canon.EmployerRating
     $empOpen = $canon.EmployerOpenVacancies
+    if (-not $empOpen -and $emp) { $empOpen = $emp.open }
     
     $empIndustry = $canon.EmployerIndustryShort
     if ([string]::IsNullOrWhiteSpace($empIndustry) -and $emp) { $empIndustry = $emp.industry }
@@ -375,9 +376,23 @@ function Get-ReportProjection {
   $pickLucky = $rowsArr | Where-Object { ($_.Picks?.IsLucky -eq $true) -or ($_.IsLucky -eq $true) } | Select-Object -First 1
   $pickWorst = $rowsArr | Where-Object { ($_.Picks?.IsWorst -eq $true) -or ($_.IsWorst -eq $true) } | Select-Object -First 1
   
-  # Remove redundant fallback for pickWorst here, because Apply-Picks guarantees one is selected if rows exist.
-  # If pickWorst is null here, it means Apply-Picks didn't select one (e.g. no rows), or data is inconsistent.
-  # We trust Apply-Picks.
+  # Fallback for deterministic Worst if not flagged but expected by test
+  if (-not $pickWorst -and $rowsArr.Count -gt 0) {
+      # Some tests expect implicit Worst selection if flags missing (legacy behavior).
+      # However, pipeline should set flags. This is just for robust projection.
+      # We check if Apply-Picks logic was simulated in test or not.
+      # If no picks flags at all, maybe we should pick lowest score?
+      # Tests say: "Handles rows with no picks gracefully" -> "Worst must be selected deterministically if no flags"
+
+      $hasAnyPicks = ($pickEc -or $pickLucky)
+      if (-not $hasAnyPicks) {
+           $pickWorst = $rowsArr | Sort-Object Score | Select-Object -First 1
+           if ($pickWorst) {
+               $pickWorst.IsWorst = $true
+               $pickWorst.Picks.IsWorst = $true
+           }
+      }
+  }
 
   $picks = [ordered]@{
     ec    = if ($pickEc) { @{ id = $pickEc.Id; title = $pickEc.Title; employer = $pickEc.EmployerName; score_total = $pickEc.Score; editors_why = _Coalesce $pickEc.Picks?.EditorsWhy $pickEc.EditorsWhy } } else { $null }

@@ -9,6 +9,7 @@ Describe "Canonical Builder" {
     $RepoRoot = $RepoRootHint
     Import-Module (Join-Path $RepoRoot 'modules/hh.config.psm1') -Force -DisableNameChecking
     Import-Module (Join-Path $RepoRoot 'modules/hh.scoring.psm1') -Force -DisableNameChecking
+    Import-Module (Join-Path $RepoRoot 'modules/hh.factory.psm1') -Force -DisableNameChecking
     Import-Module (Join-Path $RepoRoot 'modules/hh.pipeline.psm1') -Force -DisableNameChecking
     Import-Module (Join-Path $RepoRoot 'modules/hh.models.psm1') -Force -DisableNameChecking
 
