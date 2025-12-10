@@ -55,13 +55,14 @@ tmp/
 .env*
 
 # Secret and credential files
-*.key
-*.pem
-*.crt
-*.cert
-*.secret
-secrets.json
-credentials.json
+    *.key
+    *.pem
+    *.crt
+    *.cert
+    *.secret
+    secrets.json
+    config/hh.config.secrets.json
+    credentials.json
 
 # Configuration backups
 *.backup
@@ -77,6 +78,11 @@ obj/
 out/
 dist/
 build/
+
+# Bin folder exceptions - essential DLLs for project functionality
+!bin/Handlebars.Net.dll
+!bin/LiteDB.dll
+!bin/Newtonsoft.Json.dll
 
 # IDE and editor files
 .vscode/
@@ -112,7 +118,7 @@ Thumbs.db
 
 # Windows system files
 [Dd]esktop.ini
-$RECYCLE.BIN/
+.BIN/
 *.tmp
 *.temp
 
@@ -158,3 +164,4 @@ Pester.xml
 # ========================
 # End of .gitignore
 # ========================
+
