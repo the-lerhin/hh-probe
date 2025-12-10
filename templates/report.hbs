@@ -1,0 +1,569 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>hh_probe — отчёт</title>
+  <style>
+    :root {
+      --fg: #0f172a;
+      --muted: #667085;
+      --border: #e5e7eb;
+      --bg: #ffffff;
+      --pill: #f4f4f5;
+      --pill-b: #d4d4d8
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--fg)
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 24px auto;
+      padding: 0 12px
+    }
+
+    h1 {
+      font-size: 18px;
+      margin: 0 0 14px 0
+    }
+
+    h2 {
+      margin: 24px 0 12px;
+      font-size: 16px
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none
+    }
+
+    a:hover {
+      text-decoration: underline
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px
+    }
+
+    .summary-card {
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fff;
+      min-height: 84px
+    }
+
+    .summary-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted)
+    }
+
+    .summary-value {
+      font-size: 20px;
+      font-weight: 600;
+      margin-top: 6px
+    }
+
+    .summary-meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px
+    }
+
+    .search-line {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 18px
+    }
+
+    .search-line strong {
+      color: var(--fg)
+    }
+
+    .keyword-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-size: 12px;
+      margin-right: 6px;
+      margin-top: 4px
+    }
+
+    .hl {
+      background-color: #e0f7fa;
+      color: #000
+    }
+
+    /* pick cards */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fff;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      hyphens: auto
+    }
+
+    .card .hdr {
+      font-size: 11px;
+      font-weight: 600;
+      margin-bottom: 6px
+    }
+
+    .card-ec .hdr {
+      color: #c2410c
+    }
+
+    .card-lucky .hdr {
+      color: #0c4a6e
+    }
+
+    .card-worst .hdr {
+      color: #991b1b
+    }
+
+    .card .title {
+      font-size: 14px;
+      margin: 0
+    }
+
+    .card .title a {
+      color: inherit;
+      text-decoration: none
+    }
+
+    .card .title a:hover {
+      text-decoration: underline
+    }
+
+    .card .meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px
+    }
+
+    .card .why {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #334155
+    }
+
+    /* Mobile: horizontal scroll cards, 2/3 screen width */
+    @media (max-width: 700px) {
+      .cards {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+        scroll-snap-type: x mandatory;
+        padding-bottom: 8px
+      }
+
+      .card {
+        display: inline-block;
+        width: 66.666vw;
+        min-width: 66.666vw;
+        margin-right: 10px;
+        vertical-align: top;
+        scroll-snap-align: start;
+        white-space: normal
+      }
+
+      .card * {
+        white-space: normal
+      }
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse
+    }
+
+    thead th {
+      font-weight: 600;
+      font-size: 13px;
+      color: #475569;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      padding: 8px
+    }
+
+    tbody td {
+      border-bottom: 1px solid var(--border);
+      padding: 10px 8px;
+      vertical-align: top
+    }
+
+    td.num {
+      text-align: right;
+      white-space: nowrap
+    }
+
+    td.score {
+      cursor: pointer
+    }
+
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace
+    }
+
+    .muted {
+      color: var(--muted)
+    }
+
+    .small {
+      font-size: 12px
+    }
+
+    th.score,
+    td.score {
+      width: 60px
+    }
+
+    .title {
+      font-size: 14px;
+      font-weight: normal;
+      margin-bottom: 4px
+    }
+
+    .title a {
+      color: inherit;
+      text-decoration: none
+    }
+
+    .title a:hover {
+      text-decoration: underline
+    }
+
+    .badges {
+      white-space: nowrap
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 6px;
+      border: 1px solid var(--pill-b);
+      border-radius: 999px;
+      background: var(--pill);
+      font-size: 11px;
+      margin-right: 6px;
+      margin-left: 6px
+    }
+
+    .pill-ec {
+      background: #fff7ed;
+      border-color: #fdba74
+    }
+
+    .pill-lucky {
+      background: #f0f9ff;
+      border-color: #bae6fd
+    }
+
+    .pill-worst {
+      background: #fef2f2;
+      border-color: #fecaca
+    }
+
+    .pill-matched {
+      background: #f0fdf4;
+      border-color: #bbf7d0;
+      color: #15803d;
+    }
+
+    .company-meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px
+    }
+
+    .company-age {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px
+    }
+
+    .summary {
+      font-size: 12px;
+      color: #334155;
+      margin-top: 6px
+    }
+
+    .logo {
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      vertical-align: middle;
+      margin-right: 6px
+    }
+
+    .acc-row {
+      display: none
+    }
+
+    .acc-row.open {
+      display: table-row
+    }
+
+    .acc-cell {
+      padding: 0;
+      background: #fbfdff
+    }
+
+    .acc-panel {
+      padding: 10px 12px;
+      border-top: 1px solid var(--border)
+    }
+
+    .skills {
+      margin-top: 6px
+    }
+
+    .secondary-section {
+      margin-top: 36px;
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fff
+    }
+
+    .skill-cloud {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px
+    }
+
+    .skill-pop {
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--pill);
+      border: 1px solid var(--border);
+      font-size: 12px
+    }
+
+    @media (max-width: 780px) {
+      .company-cell {
+        width: auto
+      }
+
+      table,
+      thead {
+        font-size: 13px
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <h1>Vacancies</h1>
+    <div class="search-line">
+      <strong>Run:</strong> {{#if summary.started_local}}{{summary.started_local}}{{else}}—{{/if}}
+      {{#if summary.duration_text}} · <strong>Duration:</strong> {{summary.duration_text}}{{/if}}
+      {{#if summary.search_label}} · <strong>Search:</strong> {{summary.search_label}}{{/if}}
+      {{#if summary.resume_hint}} · <strong>Resume:</strong> {{summary.resume_hint}}{{/if}}
+    </div>
+    {{#if summary.keywords}}
+    <div>
+      {{#each summary.keywords}}
+      <span class="keyword-pill">{{this}}</span>
+      {{/each}}
+    </div>
+    {{/if}}
+
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="summary-label">Vacancies rendered</div>
+        <div class="summary-value">{{summary.rows_rendered}}</div>
+        <div class="summary-meta">{{summary.items_fetched}} considered total</div>
+      </div>
+      {{#if (has_any_positive summary.views_total summary.invites_total)}}
+      <div class="summary-card">
+        <div class="summary-label">Views / Invites</div>
+        <div class="summary-value">{{summary.views_total}} / {{summary.invites_total}}</div>
+        <div class="summary-meta">current run</div>
+      </div>
+      {{/if}}
+      {{#if (has_any_positive summary.llm_cached summary.llm_queried)}}
+      <div class="summary-card">
+        <div class="summary-label">LLM cache</div>
+        <div class="summary-value">{{summary.llm_cached}}</div>
+        <div class="summary-meta">{{summary.llm_queried}} queries</div>
+      </div>
+      {{/if}}
+      {{#if summary.flags_text}}
+      <div class="summary-card">
+        <div class="summary-label">Flags</div>
+        <div class="summary-value">{{summary.flags_text}}</div>
+        <div class="summary-meta">Run metadata</div>
+      </div>
+      {{/if}}
+    </div>
+
+    {{#if picks_enabled}}
+    {{#if (has_any picks.ec picks.lucky picks.worst)}}
+    <div class="cards">
+      {{#if picks.ec}}
+      <div class="card card-ec">
+        <div class="hdr">Editor's Choice</div>
+        <div class="title"><a href="{{picks.ec.url}}" target="_blank" rel="noopener">{{picks.ec.title}}</a></div>
+        <div class="meta">{{#if picks.ec.employer.name}}{{picks.ec.employer.name}}{{else}}{{picks.ec.employer}}{{/if}}
+        </div>
+        {{#if picks.ec.editors_why}}<div class="why">{{picks.ec.editors_why}}</div>{{/if}}
+      </div>
+      {{/if}}
+      {{#if picks.lucky}}
+      <div class="card card-lucky">
+        <div class="hdr">I Feel Lucky</div>
+        <div class="title"><a href="{{picks.lucky.url}}" target="_blank" rel="noopener">{{picks.lucky.title}}</a></div>
+        <div class="meta">{{#if
+          picks.lucky.employer.name}}{{picks.lucky.employer.name}}{{else}}{{picks.lucky.employer}}{{/if}}</div>
+        {{#if picks.lucky.lucky_why}}<div class="why">{{picks.lucky.lucky_why}}</div>{{/if}}
+      </div>
+      {{/if}}
+      {{#if picks.worst}}
+      <div class="card card-worst">
+        <div class="hdr">Worst Pick</div>
+        <div class="title"><a href="{{picks.worst.url}}" target="_blank" rel="noopener">{{picks.worst.title}}</a></div>
+        <div class="meta">{{#if
+          picks.worst.employer.name}}{{picks.worst.employer.name}}{{else}}{{picks.worst.employer}}{{/if}}</div>
+        {{#if picks.worst.worst_why}}<div class="why">{{picks.worst.worst_why}}</div>{{/if}}
+      </div>
+      {{/if}}
+    </div>
+    {{/if}}
+    {{/if}}
+
+    <table>
+      <thead>
+        <tr>
+          <th>Score</th>
+          <th>Vacancy</th>
+          <th>Employer</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each rows}}
+        <tr class="vacancy-row" id="row-{{@index}}">
+          <td class="num score" title="{{#if score_breakdown}}{{score_breakdown}}{{else}}{{score_core_tooltip}}{{/if}}">
+            <span class="mono small muted">{{score_display}}</span>
+          </td>
+          <td>
+            <div class="title">
+              <span class="badges">{{#if has_remote_badge}}🌐{{/if}}</span>
+              {{#if (eq source "getmatch")}}<span class="pill" style="background:#e0e7ff;border-color:#c7d2fe;color:#3730a3" title="Source: Getmatch">GM</span>{{/if}}
+              {{#if search_tiers}}<span class="pill" style="background:#f1f5f9;border-color:#e2e8f0;color:#475569" title="Search Tiers">{{search_tiers}}</span>{{/if}}
+              {{#if is_editors_choice}}<span class="pill pill-ec" title="{{editors_why}}">EC</span>{{/if}}
+              {{#if is_lucky}}<span class="pill pill-lucky" title="{{lucky_why}}">Lucky</span>{{/if}}
+              {{#if is_worst}}<span class="pill pill-worst" title="{{worst_why}}">Worst</span>{{/if}}
+              <a href="{{url}}" target="_blank" rel="noopener">{{title}}</a>
+              {{#if salary.text}}<span class="mono muted"
+                style="margin-left:6px;font-size:12px">{{salary.text}}</span>{{/if}}
+            </div>
+            {{#if summary}}
+            <div class="summary">{{{hl summary}}}</div>
+            {{/if}}
+          </td>
+          <td>
+            {{#if employer_logo_url}}<img class="logo" src="{{employer_logo_url}}" alt="">{{/if}}{{#if employer_name}}{{employer_name}}{{#if (has_positive employer_rating)}}<span
+              class="mono small muted" style="margin-left:6px">{{fmt_rating employer_rating}}</span>{{/if}}{{else}}—{{/if}}
+            <div class="company-meta">
+              {{#if employer_industry}}{{employer_industry}}{{/if}}{{#if (has_value employer_open_vacancies)}}{{#if
+              employer_industry}} · {{/if}}Open {{employer_open_vacancies}}{{/if}}{{#if (or employer_place city)}} ·
+              {{/if}}{{#if employer_place}}{{employer_place}}{{else}}{{#if country}}{{#if (ne country "Россия")}}{{#if
+              (ne country "Russia")}}{{fmt_location country
+              city}}{{else}}{{city}}{{/if}}{{else}}{{city}}{{/if}}{{else}}{{city}}{{/if}}{{/if}}
+            </div>
+            <div class="company-age mono small muted" {{#if published_at_hover}} title="{{published_at_hover}}" {{/if}}>
+              {{#if published_age_text}}{{published_age_text}}{{else}}—{{/if}}</div>
+          </td>
+        </tr>
+        <tr class="acc-row" id="acc-row-{{@index}}">
+          <td class="acc-cell" colspan="3">
+            <div class="acc-panel">
+              <div class="skills">
+                {{#if (has_any skills)}}
+                {{#each skills}}<span class="pill {{#if (eq status "matched")}}pill-matched{{/if}}">{{#if (eq status "matched")}}✔ {{/if}}{{this.name}}</span>{{/each}}
+                {{else}}
+                <span class="muted small">No skills listed for this vacancy.</span>
+                {{/if}}
+              </div>
+            </div>
+          </td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    {{#if has_skills_popular}}
+    <div class="secondary-section">
+      <h2>Popular skills this run</h2>
+      <div class="skill-cloud">
+        {{#each skills_popular}}
+        <span class="skill-pop">{{skill}} · {{count}}</span>
+        {{/each}}
+      </div>
+    </div>
+    {{/if}}
+
+    {{#if has_views_detail}}
+    <div class="secondary-section">
+      <h2>Recent resume views</h2>
+      {{#each views_detail}}
+      <div class="company-meta">{{employer}} · {{dt}}</div>
+      {{/each}}
+    </div>
+    {{/if}}
+
+    {{#if has_invites_detail}}
+    <div class="secondary-section">
+      <h2>Invites</h2>
+      {{#each invites_detail}}
+      <div class="company-meta">{{employer}} · {{dt}}</div>
+      {{/each}}
+    </div>
+    {{/if}}
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      var tbl = document.querySelector('table'); if (!tbl) return;
+      function toggleAccRow(fromEl) {
+        var tr = fromEl.closest('tr'); if (!tr) return;
+        var next = tr.nextElementSibling; if (!next || !next.classList.contains('acc-row')) return;
+        next.classList.toggle('open');
+      }
+      tbl.addEventListener('click', function (e) {
+        var t = e.target;
+        if (t.closest && t.closest('td.score')) { toggleAccRow(t); }
+      });
+    });
+  </script>
+</body>
+
+</html>
