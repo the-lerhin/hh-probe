@@ -4,7 +4,7 @@
 # Pure functions only: no HTTP, no side effects.
 #
 # Reference: FR-3.1, FR-3.2, FR-3.3, SDD-4.9
-#Requires -Version 7.4
+#Requires -Version 7.5
 
 # Imports
 if (-not (Get-Module -Name 'hh.models')) {

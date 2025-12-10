@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 #Requires -PSEdition Core
-#Requires -Version 7.4
+#Requires -Version 7.5
 
 <#
 .SYNOPSIS

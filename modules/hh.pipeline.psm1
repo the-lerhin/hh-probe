@@ -1,5 +1,5 @@
 # hh.pipeline.psm1 — main processing pipeline
-#Requires -Version 7.4
+#Requires -Version 7.5
 
 using module ./hh.models.psm1
 

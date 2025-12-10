@@ -1,5 +1,5 @@
 # hh.fetch.psm1 — vacancy retrieval & API interactions
-#Requires -Version 7.4
+#Requires -Version 7.5
 
 # Imports (ensure dependencies are available)
 # Note: Modules are usually loaded by hh.ps1, but we declare dependencies here for clarity

@@ -1,5 +1,5 @@
 # hh.llm.psm1 — LLM layer module (initial wrappers)
-#Requires -Version 7.4
+#Requires -Version 7.5
 
 # Cache provider bootstrap (LiteDB optional)
 try {

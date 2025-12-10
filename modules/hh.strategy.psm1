@@ -1,5 +1,5 @@
 # hh.strategy.psm1 — Executive Career Strategy analysis module
-#Requires -Version 7.4
+#Requires -Version 7.5
 
 # Import dependencies if not loaded
 if (-not (Get-Module -Name 'hh.models')) { Import-Module (Join-Path $PSScriptRoot 'hh.models.psm1') -ErrorAction SilentlyContinue }

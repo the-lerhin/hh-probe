@@ -1,5 +1,5 @@
 # tests/E2E.Smoke.Tests.ps1
-#Requires -Version 7.4
+#Requires -Version 7.5
 
 $loc = Get-Location
 # $repoRoot = $PSScriptRoot | Split-Path -Parent # This fails in Pester 5 scope

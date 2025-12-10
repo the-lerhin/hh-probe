@@ -9,7 +9,7 @@ if (-not (Get-Module -Name 'hh.log')) {
 
 
 # hh.render.psm1 — Render layer module (CSV/JSON/HTML)
-#Requires -Version 7.4
+#Requires -Version 7.5
 
 
 

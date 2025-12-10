@@ -1,5 +1,5 @@
 # hh.config.psm1 — shared configuration helpers
-#Requires -Version 7.4
+#Requires -Version 7.5
 
 $script:ConfigCache = $null
 $script:ConfigPath = $null

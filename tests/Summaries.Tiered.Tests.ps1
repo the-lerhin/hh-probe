@@ -1,5 +1,5 @@
 # Summaries.Tiered.Tests.ps1
-#Requires -Version 7.4
+#Requires -Version 7.5
 
 Import-Module -Name (Join-Path $PSScriptRoot '..' 'modules' 'hh.pipeline.psm1') -Force -DisableNameChecking
 Import-Module -Name (Join-Path $PSScriptRoot '..' 'modules' 'hh.llm.summary.psm1') -Force -DisableNameChecking
