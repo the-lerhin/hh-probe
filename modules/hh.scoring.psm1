@@ -6,6 +6,8 @@
 # Reference: FR-3.1, FR-3.2, FR-3.3, SDD-4.9
 #Requires -Version 7.5
 
+
+
 # Imports
 if (-not (Get-Module -Name 'hh.models')) {
     $modModels = Join-Path (Split-Path -Parent $PSScriptRoot) 'modules/hh.models.psm1'
@@ -17,7 +19,15 @@ if (-not (Get-Module -Name 'hh.util')) {
 }
 if (-not (Get-Module -Name 'hh.config')) {
     $modConfig = Join-Path (Split-Path -Parent $PSScriptRoot) 'modules/hh.config.psm1'
-    if (Test-Path -LiteralPath $modConfig) { Import-Module $modConfig -DisableNameChecking -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $modConfig) { 
+        Import-Module $modConfig -DisableNameChecking -ErrorAction SilentlyContinue 
+    }
+}
+
+# Принудительный мост: гарантируем, что команды hh.config доступны в скоупе этого модуля
+if (Get-Module -Name hh.config) {
+    # Импортируем команды из уже загруженного модуля в текущий скоуп модуля
+    Import-Module -Name hh.config -Function * -ErrorAction SilentlyContinue
 }
 
 # ==============================================================================
@@ -27,6 +37,10 @@ if (-not (Get-Module -Name 'hh.config')) {
 function Get-HHScoringConfig {
     # Reads config/hh.config.jsonc via Get-HHConfigValue
     # Returns a standardized config object for scoring
+    
+    # Ensure config module is loaded
+    $configPath = Join-Path $PSScriptRoot 'hh.config.psm1'
+    if (Test-Path $configPath) { Import-Module $configPath -DisableNameChecking -ErrorAction SilentlyContinue }
     
     $baseCurrency = [string](Get-HHConfigValue -Path @('scoring', 'base_currency') -Default 'RUB')
     
@@ -122,9 +136,8 @@ function Get-SalaryComponent {
     $hasSalary = ($Vacancy.Salary -and ($Vacancy.Salary.From -gt 0 -or $Vacancy.Salary.To -gt 0))
     
     if (-not $hasSalary) {
-        # Hidden Salary Logic
-        if ($source -eq 'getmatch') { return 0.9 }
-        if ($source -eq 'hh' -or $source -match '^hh_') {
+        # Hidden Salary Logic - Equal treatment for all sources
+        if ($source -eq 'hh' -or $source -match '^hh_' -or $source -eq 'getmatch') {
             if ($expId -eq 'moreThan6') { return 0.8 } # Senior
             return 0.5 # Default hidden
         }
@@ -172,7 +185,6 @@ function Get-ExperienceComponent {
     param($Vacancy, $CvMonths)
     
     $source = $Vacancy.Meta.Source
-    if ($source -eq 'getmatch') { return 1.0 }
     
     $vacExpId = if ($Vacancy.Experience) { $Vacancy.Experience.Id } else { '' }
     if (-not $vacExpId) { return 0.5 }
@@ -256,12 +268,26 @@ function Get-HeuristicScore {
     )
     
     # Components
-    $skillsObj   = Get-SkillsComponent -CvSkills $CVProfile.skill_set -VacSkills $Vacancy.KeySkills
+    $skillsObj = if ($CVProfile -and $CVProfile.skill_set) {
+        Get-SkillsComponent -CvSkills $CVProfile.skill_set -VacSkills $Vacancy.KeySkills
+    } else {
+        [PSCustomObject]@{ Score = 0.0; Matched = @(); InCV = @() }
+    }
     $skillsScore = [double]$skillsObj.Score
     
-    $salaryScore = Get-SalaryComponent -Vacancy $Vacancy -UserMin $CVProfile.min_salary -BaseCurrency $Config.BaseCurrency -ExchangeRates $ExchangeRates
-    $expScore    = Get-ExperienceComponent -Vacancy $Vacancy -CvMonths $CVProfile.total_experience_months
-    $recScore    = Get-RecencyComponent -Vacancy $Vacancy -Tau $Config.RecencyTau
+    $salaryScore = if ($CVProfile -and $CVProfile.min_salary) {
+        Get-SalaryComponent -Vacancy $Vacancy -UserMin $CVProfile.min_salary -BaseCurrency $Config.BaseCurrency -ExchangeRates $ExchangeRates
+    } else {
+        0.5  # Default neutral score when no CV data
+    }
+    
+    $expScore = if ($CVProfile -and $CVProfile.total_experience_months) {
+        Get-ExperienceComponent -Vacancy $Vacancy -CvMonths $CVProfile.total_experience_months
+    } else {
+        0.5  # Default neutral score when no CV data
+    }
+    
+    $recScore = Get-RecencyComponent -Vacancy $Vacancy -Tau $Config.RecencyTau
     
     # DEBUG
     # Write-Host "DEBUG: Scores: Sk=$skillsScore Sal=$salaryScore Exp=$expScore Rec=$recScore"

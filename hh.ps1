@@ -61,6 +61,60 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = if ($Host -and $Host.UI -and $Host.UI.RawUI) { 'Continue' } else { 'SilentlyContinue' }
 $global:Debug = ($DebugMode.IsPresent -or $PSBoundParameters.ContainsKey('Debug'))
 
+# Add modules directory to PSModulePath for automatic dependency resolution
+$modulesPath = Join-Path $PSScriptRoot 'modules'
+if (-not $env:PSModulePath.Contains($modulesPath)) {
+    $env:PSModulePath = $modulesPath + [System.IO.Path]::PathSeparator + $env:PSModulePath
+}
+
+# Explicitly load hh.config module in Global scope to make it available to all other modules
+# This is necessary because PowerShell's automatic module dependency resolution doesn't work
+# for custom modules that depend on each other within the same session
+$configModulePath = Join-Path $modulesPath 'hh.config.psm1'
+if (Test-Path $configModulePath) {
+    # Remove module if already loaded to ensure clean state
+    if (Get-Module -Name 'hh.config' -ErrorAction SilentlyContinue) {
+        Remove-Module -Name 'hh.config' -Force -ErrorAction SilentlyContinue
+    }
+    
+    # Force Global scope import with explicit parameter
+    Import-Module $configModulePath -Global -Force -DisableNameChecking -ErrorAction Stop
+    Write-Host "✓ Pre-loaded hh.config module in Global scope for cross-module dependencies" -ForegroundColor Green
+    
+    # Diagnostic: Verify hh.config is available in different scopes
+    $globalConfigCheck = Get-Module hh.config
+    if ($globalConfigCheck) {
+        Write-Host "✓ hh.config verified with $($globalConfigCheck.ExportedCommands.Count) exported commands" -ForegroundColor Green
+        Write-Host "✓ Module path: $($globalConfigCheck.Path)" -ForegroundColor Green
+        
+        # Check availability in different scopes
+        $globalAvailable = Get-Command Get-HHConfigValue -ErrorAction SilentlyContinue
+        $scriptAvailable = Get-Command Get-HHConfigValue -ErrorAction SilentlyContinue -Scope Script
+        
+        if ($globalAvailable) {
+            Write-Host "✓ Get-HHConfigValue is available in Global scope" -ForegroundColor Green
+        } else {
+            Write-Host "✗ Get-HHConfigValue is NOT available in Global scope" -ForegroundColor Red
+        }
+        
+        if ($scriptAvailable) {
+            Write-Host "✓ Get-HHConfigValue is available in Script scope" -ForegroundColor Green
+        } else {
+            Write-Host "✗ Get-HHConfigValue is NOT available in Script scope" -ForegroundColor Red
+        }
+        
+        # Additional verification: test actual function call
+        try {
+            $testConfig = Get-HHConfigValue -Path @('scoring', 'base_currency') -Default 'RUB' -ErrorAction Stop
+            Write-Host "✓ Get-HHConfigValue function call successful: $testConfig" -ForegroundColor Green
+        } catch {
+            Write-Host "✗ Get-HHConfigValue function call failed: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "✗ hh.config NOT found after explicit import" -ForegroundColor Red
+    }
+}
+
 # Load Utility Module First
 $modUtil = Join-Path $PSScriptRoot 'modules/hh.util.psm1'
 if (-not (Test-Path -LiteralPath $modUtil)) { 
@@ -94,31 +148,47 @@ if (-not (Test-Path (Join-Path $RepoRoot 'config/hh.config.jsonc'))) {
 
 
 # --- Module Loading ---
+Write-Host "Starting module loading process..."
 $Modules = @(
-    'hh.models.psm1',
-    'hh.config.psm1',
-    'hh.log.psm1',
-    'hh.core.psm1',
-    'hh.cache.psm1',
-    'hh.dictionaries.psm1',
-    'hh.http.psm1',
-    'hh.fetch.psm1',
-    'hh.llm.psm1',
-    'hh.llm.summary.psm1',
-    'hh.llm.local.psm1',
-    'hh.cv.psm1',
-    'hh.scoring.psm1',
-    'hh.pipeline.psm1',
-    'hh.render.psm1',
-    'hh.tmpl.psm1',
-    'hh.notify.psm1',
-    'hh.helpers.psm1'
+    'hh.config',
+    'hh.models',
+    'hh.log',
+    'hh.core',
+    'hh.cache',
+    'hh.dictionaries',
+    'hh.http',
+    'hh.fetch',
+    'hh.llm',
+    'hh.llm.summary',
+    'hh.llm.local',
+    'hh.cv',
+    'hh.scoring',
+    'hh.factory',
+    'hh.pipeline',
+    'hh.render',
+    'hh.tmpl',
+    'hh.notify',
+    'hh.helpers'
 )
 
+# Явно импортируем внешние зависимости, которые требуются модулям
+$psFrameworkPath = '/Users/lerhin/.local/share/powershell/Modules/PSFramework/1.13.416/PSFramework.psd1'
+if (Test-Path $psFrameworkPath) {
+    Import-Module $psFrameworkPath -Force -DisableNameChecking -ErrorAction Stop
+    Write-Host "PSFramework loaded from: $psFrameworkPath"
+} else {
+    Write-Error "PSFramework not found at: $psFrameworkPath"
+    exit 1
+}
+
 foreach ($m in $Modules) {
-    $path = Join-Path $RepoRoot "modules/$m"
+    $path = Join-Path $RepoRoot "modules/$m.psd1"
     if (Test-Path -LiteralPath $path) {
-        Import-Module $path -Force -DisableNameChecking -ErrorAction Stop
+        # Загружаем через манифест для автоматического разрешения зависимостей
+        Write-Host "Loading module: $m"
+        Import-Module (Resolve-Path -LiteralPath $path) -Force -DisableNameChecking -ErrorAction Stop -Global
+        
+
         
         # Initialize logging immediately after loading
         if ($m -eq 'hh.log.psm1') {
@@ -127,26 +197,56 @@ foreach ($m in $Modules) {
             Initialize-Logging -LogPath (Join-Path $LogsRoot 'hh.log')
         }
     }
-    else {
-        Write-Warning "Module not found: $path"
+        else {
+            Write-Warning "Module not found: $path"
+        }
     }
-}
-
-# --- Configuration ---
-if ($Config) {
-    Set-HHConfigPath -Path (Resolve-Path -LiteralPath $Config).Path
-}
-else {
-    $defConfig = Join-Path $RepoRoot 'config/hh.config.jsonc'
-    if (Test-Path $defConfig) { Set-HHConfigPath -Path $defConfig }
-}
-
-
-# Set Globals
+    
+    # --- Configuration ---
+    if ($Config) {
+        $resolvedPath = (Resolve-Path -LiteralPath $Config).Path
+        hh.config\Set-HHConfigPath -Path $resolvedPath
+        $env:HH_CONFIG_FILE = $resolvedPath
+    }
+    else {
+        $defConfig = Join-Path $RepoRoot 'config/hh.config.jsonc'
+        if (Test-Path $defConfig) { 
+            hh.config\Set-HHConfigPath -Path $defConfig
+            $env:HH_CONFIG_FILE = $defConfig
+        }
+    }
+    
+    # --- Secrets Verification (Fail Fast) ---
+    # Ensure we have valid secrets before proceeding
+    if (Get-Module -Name 'hh.config') {
+        hh.config\Reset-HHConfigCache
+        $secrets = hh.config\Get-HHSecrets
+        
+        $s1 = $secrets.HHTokenSource
+        $s2 = $secrets.TelegramTokenSource
+        $s3 = $secrets.TelegramChatSource
+        
+        Write-Host "Secrets Check: HH=$s1 TG_Token=$s2 TG_Chat=$s3" -ForegroundColor Gray
+        
+        if ($s1 -eq 'none' -or $s2 -eq 'none' -or $s3 -eq 'none') {
+            $cfgPath = hh.config\Get-HHConfigPath
+            throw "CRITICAL: Secrets missing in Main Runspace. Aborting.
+            Config Path: '$cfgPath'
+            Env Var: '$env:HH_CONFIG_FILE'
+            Repo Root: '$RepoRoot'
+            Missing: $(if($s1 -eq 'none'){'HHToken'}else{''}) $(if($s2 -eq 'none'){'TelegramToken'}else{''}) $(if($s3 -eq 'none'){'TelegramChat'}else{''})"
+        }
+    }
+    
+    # Set Globals
 hh.llm\Set-LLMRuntimeGlobals -EnabledOverride:$LLM | Out-Null
 $global:WhatIfSearch = ($WhatIfSearch.IsPresent -or $PSBoundParameters.ContainsKey('WhatIfSearch'))
 
-Write-LogMain -Message "Modules loaded. Flags: Digest=$Digest Ping=$Ping LLM=$LLM SyncCV=$SyncCV Debug=$global:Debug" -Level Host
+Write-PSFMessage -Level Host -Message "Modules loaded. Flags: Digest=$Digest Ping=$Ping LLM=$LLM SyncCV=$SyncCV Debug=$global:Debug" -Tag 'Main', 'Init'
+
+
+
+# ------------------------
 
 # --- File Lock ---
 $LockFilePath = Join-Path $RepoRoot 'data/hh.lock'
@@ -166,7 +266,7 @@ catch {
 }
 
 if (-not $lockAcquired) {
-    Write-LogMain -Message "Another instance is running (Lock: $LockFilePath). Exiting." -Level Error
+    Write-PSFMessage -Level Error -Message "Another instance is running (Lock: $LockFilePath). Exiting." -Tag 'Main', 'Lock'
     exit 1
 }
 
@@ -179,7 +279,7 @@ try {
     } -SupportEvent
 }
 catch {
-    Write-LogMain -Message "Warning: Could not register lock cleanup handler" -Level Warning
+    Write-PSFMessage -Level Warning -Message "Warning: Could not register lock cleanup handler" -Tag 'Main', 'Lock'
 }
 
 # --- Main Execution ---
@@ -228,18 +328,18 @@ try {
             Skills     = (Get-HHConfigValue -Path @('skills', 'enabled') -Default $true)
             CV         = (Get-HHConfigValue -Path @('cv', 'enabled') -Default $true)
         }
-        Write-LogMain "Config: $($r | ConvertTo-Json -Compress)" -Level Debug
+        Write-PSFMessage -Level Debug -Message "Config: $($r | ConvertTo-Json -Compress)" -Tag 'Main', 'Config'
     }
 
     # SyncCV Action
     if ($SyncCV) {
         $outPath = Get-HHConfigValue -Path @('cv', 'sync_output_path') -Default 'data/inputs/cv_hh.json'
         if (Sync-HHCVFromResume -OutputPath $outPath) {
-            Write-LogMain -Message "SyncCV completed. Snapshot: $outPath" -Level Host
+            Write-PSFMessage -Level Host -Message "SyncCV completed. Snapshot: $outPath" -Tag 'Main', 'SyncCV'
             exit 0
         }
         else {
-            Write-LogMain -Message "SyncCV failed." -Level Error
+            Write-PSFMessage -Level Error -Message "SyncCV failed." -Tag 'Main', 'SyncCV'
             exit 1
         }
     }
@@ -256,7 +356,7 @@ try {
         # CV Profile Resolution
         $cvProfile = $null
         if (Get-Command -Name 'hh.cv\Get-HHEffectiveProfile' -ErrorAction SilentlyContinue) {
-            try { $cvProfile = hh.cv\Get-HHEffectiveProfile } catch { Write-LogMain "Get-HHEffectiveProfile error: $_" -Level Debug }
+            try { $cvProfile = hh.cv\Get-HHEffectiveProfile } catch { Write-PSFMessage -Level Debug -Message "Get-HHEffectiveProfile error: $_" -Tag 'Main', 'CV' }
         }
         
             # CV Bumping (Maintenance)
@@ -274,7 +374,7 @@ try {
             #             }
             #         }
             #         else {
-            #             Write-LogMain "[CV] Bump not needed (recent or weekend)." -Level Host
+            #             Write-PSFMessage -Level Host -Message "[CV] Bump not needed (recent or weekend)." -Tag 'Main', 'CV'
             #         }
             #     }
             # }
@@ -286,11 +386,11 @@ try {
         if ($searchMode -eq 'ResumeSkills' -and $cvProfile.Skills) {
             $cleanSkills = $cvProfile.Skills | Where-Object { $_.Length -lt 50 -and $_ -notmatch '[\r\n]' } | Select-Object -First 20
             $rawSearchText = ($cleanSkills -join ' OR ')
-            Write-LogMain -Message "[Search] Using CV skills ($($cleanSkills.Count))" -Level Host
+            Write-PSFMessage -Level Host -Message "[Search] Using CV skills ($($cleanSkills.Count))" -Tag 'Main', 'Search'
             
             if ($cvProfile.HHResumeId) {
                 $ResumeId = $cvProfile.HHResumeId
-                Write-LogMain -Message "[Search] Using ResumeId: $ResumeId" -Level Host
+                Write-PSFMessage -Level Host -Message "[Search] Using ResumeId: $ResumeId" -Tag 'Main', 'Search'
             }
         }
 
@@ -313,7 +413,7 @@ try {
             elseif (-not $searchText) { $searchText = $fallback }
         }
         catch {
-            Write-LogMain "Build-SearchQueryText failed: $_" -Level Warning
+            Write-PSFMessage -Level Warning -Message "Build-SearchQueryText failed: $_" -Tag 'Main', 'Search'
         }
         
         # Limits & Config
@@ -358,8 +458,8 @@ try {
     }
 }
 catch {
-    Write-LogMain -Message "Fatal Error: $_" -Level Error
-    Write-LogMain -Message "Stack Trace: $($_.ScriptStackTrace)" -Level Debug
+    Write-PSFMessage -Level Error -Message "Fatal Error: $_" -Tag 'Main', 'Error'
+    Write-PSFMessage -Level Debug -Message "Stack Trace: $($_.ScriptStackTrace)" -Tag 'Main', 'Error'
     exit 1
 }
 finally {

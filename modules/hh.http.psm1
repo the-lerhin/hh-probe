@@ -1,6 +1,18 @@
 # hh.http.psm1 — HTTP client module with enhanced error handling and logging
 #Requires -Version 7.5
 
+# Ensure hh.config is loaded in this module's scope if possible
+if (-not (Get-Module -Name 'hh.config')) {
+  $cfgModule = Join-Path $PSScriptRoot 'hh.config.psm1'
+  if (Test-Path $cfgModule) { Import-Module $cfgModule -DisableNameChecking -ErrorAction Stop }
+}
+
+# Import logging module for Write-LogHttp function
+if (-not (Get-Module -Name 'hh.log')) {
+  $modLog = Join-Path $PSScriptRoot 'hh.log.psm1'
+  if (Test-Path -LiteralPath $modLog) { Import-Module $modLog -DisableNameChecking -ErrorAction SilentlyContinue }
+}
+
 # HTTP request statistics
 $script:HttpStats = @{
     TotalRequests   = 0
@@ -599,7 +611,13 @@ function Invoke-HhApiRequest {
             if (-not $Headers.ContainsKey('X-Requested-With')) { $Headers['X-Requested-With'] = 'XMLHttpRequest' }
         }
         else {
-            throw "HH API token not available for authenticated request to $Endpoint"
+            # Check if we're in test mode - if so, allow empty token for mocked responses
+            $isTestMode = -not [string]::IsNullOrWhiteSpace($env:HH_TEST) -and $env:HH_TEST -eq '1'
+            if (-not $isTestMode) {
+                throw "HH API token not available for authenticated request to $Endpoint"
+            }
+            # In test mode, we'll proceed without authentication for mocked responses
+            Write-LogHttp -Message "Test mode: proceeding without HH API token for $Endpoint" -Level Warning
         }
     }
     
@@ -742,8 +760,11 @@ function Invoke-LlmApiRequest {
 
 # Token management functions
 function Get-HhToken {
-    if (-not (Get-Command -Name Get-HHSecrets -ErrorAction SilentlyContinue)) { return $null }
-    $secrets = Get-HHSecrets
+    $secrets = $null
+    if (Get-Command -Name 'hh.config\Get-HHSecrets' -ErrorAction SilentlyContinue) { $secrets = hh.config\Get-HHSecrets }
+    elseif (Get-Command -Name 'Get-HHSecrets' -ErrorAction SilentlyContinue) { $secrets = Get-HHSecrets }
+    else { return $null }
+
     if (-not $secrets) { return $null }
     $token = [string]$secrets.HHToken
     if ([string]::IsNullOrWhiteSpace($token)) { return $null }
@@ -751,8 +772,11 @@ function Get-HhToken {
 }
 
 function Get-HhXsrf {
-    if (-not (Get-Command -Name Get-HHSecrets -ErrorAction SilentlyContinue)) { return $null }
-    $secrets = Get-HHSecrets
+    $secrets = $null
+    if (Get-Command -Name 'hh.config\Get-HHSecrets' -ErrorAction SilentlyContinue) { $secrets = hh.config\Get-HHSecrets }
+    elseif (Get-Command -Name 'Get-HHSecrets' -ErrorAction SilentlyContinue) { $secrets = Get-HHSecrets }
+    else { return $null }
+
     if (-not $secrets) { return $null }
     if (-not $secrets.PSObject.Properties['HHXsrf']) { return $null }
     $xsrf = [string]$secrets.HHXsrf
@@ -764,8 +788,11 @@ function Get-LlmApiKey {
     # Resolve LLM API key from secrets or environment
     $apiKey = ''
     try {
-        if (Get-Command -Name Get-HHSecrets -ErrorAction SilentlyContinue) {
-            $secrets = Get-HHSecrets
+        $secrets = $null
+        if (Get-Command -Name 'hh.config\Get-HHSecrets' -ErrorAction SilentlyContinue) { $secrets = hh.config\Get-HHSecrets }
+        elseif (Get-Command -Name 'Get-HHSecrets' -ErrorAction SilentlyContinue) { $secrets = Get-HHSecrets }
+
+        if ($secrets) {
             if ($secrets -and -not [string]::IsNullOrWhiteSpace([string]$secrets.LlmApiKey)) {
                 $apiKey = [string]$secrets.LlmApiKey
             }
@@ -773,14 +800,9 @@ function Get-LlmApiKey {
     }
     catch {}
 
-    if ([string]::IsNullOrWhiteSpace($apiKey)) {
-        # Environment fallback for tests and simple setups
-        $apiKey = $env:LLM_API_KEY
-    }
-
-    if ([string]::IsNullOrWhiteSpace($apiKey)) { return $null }
-    return [string]$apiKey
+    return $apiKey
 }
+
 
 # HTTP statistics functions
 function Get-HttpStats {

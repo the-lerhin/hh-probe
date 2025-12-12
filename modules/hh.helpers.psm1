@@ -69,22 +69,15 @@ function Get-HHNullableInt {
 function Get-HHCanonicalSalary {
     param([object]$Detail)
     
-    # DEBUG: Log what we're receiving
-    Write-Host "[DEBUG] Get-HHCanonicalSalary called with Detail: $($Detail | ConvertTo-Json -Compress)" -ForegroundColor Yellow
-    
     # Access salary data from both salary and salary_range properties
     # Use explicit property access instead of null-conditional operator
     $source = $null
     if ($Detail.salary -ne $null) {
-        Write-Host "[DEBUG] Using salary property" -ForegroundColor Green
         $source = $Detail.salary
     } elseif ($Detail.salary_range -ne $null) {
-        Write-Host "[DEBUG] Using salary_range property" -ForegroundColor Cyan
         $source = $Detail.salary_range
     }
     
-    Write-Host "[DEBUG] Source object: $($source | ConvertTo-Json -Compress)" -ForegroundColor Yellow
-
   # Use explicit property access instead of null-conditional operator
   $fromVal = $null
   $toVal   = $null
@@ -116,7 +109,6 @@ function Get-HHCanonicalSalary {
   }
 
   if ($currency) { $currency = $currency.ToUpperInvariant() } else { $currency = '' }
-  Write-Host "[DEBUG] Extracted values - from: $fromVal, to: $toVal, currency: $currency, gross: $gross" -ForegroundColor Magenta
 
   $symbol = switch ($currency) {
     'RUR' { '₽' }
@@ -193,15 +185,42 @@ function Get-HHCanonicalSalary {
 function Import-HHModulesForParallel {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$ModulesPath
+        [string]$ModulesPath,
+        
+        [Parameter(Mandatory = $false)]
+        [string]$RootConfigPath # Absolute path to hh.config.jsonc from the main runspace (optional)
     )
     
-    $modules = @('hh.models.psm1', 'hh.util.psm1', 'hh.config.psm1', 'hh.log.psm1', 'hh.cache.psm1', 'hh.http.psm1')
+    # If RootConfigPath is not provided, infer it from ModulesPath:
+    if ([string]::IsNullOrWhiteSpace($RootConfigPath)) {
+        # Assume repo layout: <repo>/modules and <repo>/config/hh.config.jsonc
+        $repoRoot = Split-Path $ModulesPath -Parent
+        $RootConfigPath = Join-Path (Join-Path $repoRoot 'config') 'hh.config.jsonc'
+    }
+    
+    $modules = @(
+        'hh.models.psm1',
+        'hh.util.psm1',
+        'hh.config.psm1',
+        'hh.log.psm1',
+        'hh.cache.psm1',
+        'hh.http.psm1'
+    )
     
     foreach ($m in $modules) {
         $path = Join-Path $ModulesPath $m
         if (Test-Path $path) {
             Import-Module -Name $path -DisableNameChecking -Force -ErrorAction SilentlyContinue
+        }
+    }
+    
+    # After importing hh.config.psm1, explicitly set its path and reset cache
+    if (Get-Module -Name 'hh.config') {
+        if (Get-Command -Name 'hh.config\Set-HHConfigPath' -ErrorAction SilentlyContinue) {
+            if (-not [string]::IsNullOrWhiteSpace($RootConfigPath) -and (Test-Path $RootConfigPath)) {
+                hh.config\Set-HHConfigPath -Path $RootConfigPath
+                hh.config\Reset-HHConfigCache
+            }
         }
     }
     

@@ -16,6 +16,11 @@ if (-not (Get-Module -Name 'hh.llm')) {
   if (Test-Path -LiteralPath $modLLM) { Import-Module $modLLM -DisableNameChecking -ErrorAction Stop }
 }
 
+if (-not (Get-Module -Name 'hh.log')) {
+  $modLog = Join-Path $PSScriptRoot 'hh.log.psm1'
+  if (Test-Path -LiteralPath $modLog) { Import-Module $modLog -DisableNameChecking -ErrorAction Stop }
+}
+
 # LEGACY: routing shim to support both module-qualified and plain LLM helpers; unify call sites
 function Invoke-LlmHelper {
   param(
@@ -43,13 +48,13 @@ function Clean-SummaryText {
 
   # 2. Strip Markdown bullets/headings at start
   # Matches: - * • # > (and combinations like ##, ###) followed by space
-  $clean = $clean -replace '^[\-\*\•\#\>]+ ', ''
+  $clean = $clean -replace '^[\-*•\#\>]+ ', ''
 
   # 3. Strip surrounding quotes or backticks
   # e.g. "text", 'text', `text`, **text**
   if ($clean.Length -gt 1) {
     if ($clean.StartsWith('"') -and $clean.EndsWith('"')) { $clean = $clean.Substring(1, $clean.Length - 2) }
-    elseif ($clean.StartsWith("'") -and $clean.EndsWith("'")) { $clean = $clean.Substring(1, $clean.Length - 2) }
+    elseif ($clean.StartsWith("'" ) -and $clean.EndsWith("'" )) { $clean = $clean.Substring(1, $clean.Length - 2) }
     elseif ($clean.StartsWith('`') -and $clean.EndsWith('`')) { $clean = $clean.Substring(1, $clean.Length - 2) }
     elseif ($clean.StartsWith('**') -and $clean.EndsWith('**')) { $clean = $clean.Substring(2, $clean.Length - 4) }
   }
@@ -129,7 +134,7 @@ function Get-HHRemoteVacancySummary {
   $result = Invoke-CanonicalSummaryWithCache -Operation 'summary.remote' -Vacancy $Vacancy -CvText $cvText -ForceLanguage $lang
     
   if ($result -and $result.summary) {
-    return [pscustomobject]@{
+    return [pscustomobject]@{ 
       Summary  = $result.summary
       Language = $result.language
       Model    = $result.model
@@ -278,7 +283,7 @@ function Invoke-CanonicalSummaryOperation {
   }
   catch {}
 
-  return [pscustomobject]@{
+  return [pscustomobject]@{ 
     summary   = $summaryText.Trim()
     language  = $lang
     detection = $langInfo
@@ -322,7 +327,7 @@ function Invoke-CanonicalSummaryWithCache {
     if ($cached) {
       $cleanCached = Clean-SummaryText -Text ([string]$cached)
       $cfgCache = Resolve-LlmOperationConfig -Operation $Operation
-      return [pscustomobject]@{
+      return [pscustomobject]@{ 
         summary   = $cleanCached
         language  = ''
         detection = $null
@@ -364,59 +369,68 @@ if (-not $CacheRoot) {
   }
 }
 
-function Get-SummaryCachePath([string]$VacId, [Nullable[DateTime]]$PubUtc) {
-  if ([string]::IsNullOrWhiteSpace($VacId) -or -not ($PubUtc -is [DateTime])) { return $null }
-  try { if (-not (Test-Path -LiteralPath $CacheRoot)) { New-Item -ItemType Directory -Force -Path $CacheRoot | Out-Null } } catch {}
-  $tag = "{0:yyyyMMddHHmm}" -f $PubUtc.ToUniversalTime()
-  return Join-Path $CacheRoot ("sum_" + $VacId + "_" + $tag + ".txt")
-}
-
-function Read-SummaryCache([string]$VacId, [Nullable[DateTime]]$PubUtc) {
-  $p = Get-SummaryCachePath -VacId $VacId -PubUtc $PubUtc
-  if ($p -and (Test-Path -LiteralPath $p)) {
-    # TTL check for summary cache
-    $ttlDays = 0
-    try { $ttlDays = [int](Get-HHConfigValue -Path @('llm', 'summary', 'ttl_days') -Default 14) } catch { $ttlDays = 14 }
-    if ($ttlDays -gt 0) {
-      try {
-        $fi = Get-Item -LiteralPath $p
-        $now = (Get-Date).ToUniversalTime()
-        if ($fi.LastWriteTime.ToUniversalTime().AddDays($ttlDays) -le $now) { return $null }
-      }
-      catch {}
-    }
-    try {
-      Add-SummaryCacheStats -Field 'sum_cached'
-      Add-SummaryCacheStats -Field 'llm_cached'
-    }
-    catch {}
-    try { return [System.IO.File]::ReadAllText($p, [System.Text.Encoding]::UTF8) } catch { return $null }
-  }
-  # fallback: latest summary for this vacancy id
+function Read-SummaryCache([string]$VacId, [object]$PubUtc) {
+  if ([string]::IsNullOrWhiteSpace($VacId)) { return $null }
+  
+  # Try to read from LiteDB
   try {
-    $pattern = "sum_${VacId}_*.txt"
-    if (-not (Test-Path -LiteralPath $CacheRoot)) { return $null }
-    $cand = Get-ChildItem -LiteralPath $CacheRoot -Filter $pattern -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if ($cand) {
-      try {
-        Add-SummaryCacheStats -Field 'sum_cached'
-        Add-SummaryCacheStats -Field 'llm_cached'
-      }
-      catch {}
-      try { return [System.IO.File]::ReadAllText($cand.FullName, [System.Text.Encoding]::UTF8) } catch { return $null }
+    if (Get-Command -Name Get-HHCacheItem -ErrorAction SilentlyContinue) {
+        $item = Get-HHCacheItem -Collection 'llm_summaries' -Key $VacId
+        if ($item -and $item -is [string]) { 
+            # Add stats
+            try {
+                Add-SummaryCacheStats -Field 'sum_cached'
+                Add-SummaryCacheStats -Field 'llm_cached'
+            } catch {}
+            return $item 
+        }
     }
   }
-  catch {}
+  catch {
+    Write-LogLLM "[Cache] Read summary error for $($VacId): $_" -Level Warning
+  }
   return $null
 }
 
-function Write-SummaryCache([string]$VacId, [Nullable[DateTime]]$PubUtc, [string]$Summary) {
-  if ([string]::IsNullOrWhiteSpace($Summary)) { return }
-  $p = Get-SummaryCachePath -VacId $VacId -PubUtc $PubUtc
-  if ($p) {
-    try { $Summary | Out-File -FilePath $p -Encoding utf8 } catch {}
+function Write-SummaryCache([string]$VacId, [object]$PubUtc, [string]$Summary) {
+  if ([string]::IsNullOrWhiteSpace($Summary) -or [string]::IsNullOrWhiteSpace($VacId)) { return }
+  
+  try {
+    if (Get-Command -Name Set-HHCacheItem -ErrorAction SilentlyContinue) {
+        # Determine TTL
+        $ttlDays = 14
+        try { $ttlDays = [int](Get-HHConfigValue -Path @('llm', 'summary', 'ttl_days') -Default 14) } catch {}
+        
+        Set-HHCacheItem -Collection 'llm_summaries' -Key $VacId -Value $Summary -Metadata @{ ttl_days = $ttlDays; pub_utc = $PubUtc }
+    }
   }
+  catch {
+    Write-LogLLM "[Cache] Write summary error for $($VacId): $_" -Level Warning
+  }
+}
+
+function Read-RankingCache([string]$VacId) {
+  if ([string]::IsNullOrWhiteSpace($VacId)) { return $null }
+  try {
+    if (Get-Command -Name Get-HHCacheItem -ErrorAction SilentlyContinue) {
+        $item = Get-HHCacheItem -Collection 'llm_ranking' -Key $VacId
+        if ($item -and $item -is [PSCustomObject]) { return $item }
+        if ($item -and $item -is [System.Collections.IDictionary]) { return [PSCustomObject]$item }
+    }
+  }
+  catch { Write-LogLLM "[Cache] Read ranking error for $($VacId): $_" -Level Warning }
+  return $null
+}
+
+function Write-RankingCache([string]$VacId, [double]$Score, [string]$Reason) {
+  if ([string]::IsNullOrWhiteSpace($VacId)) { return }
+  try {
+    if (Get-Command -Name Set-HHCacheItem -ErrorAction SilentlyContinue) {
+        $val = @{ fit_score = $Score; reason = $Reason }
+        Set-HHCacheItem -Collection 'llm_ranking' -Key $VacId -Value $val -Metadata @{ ttl_days = 30 }
+    }
+  }
+  catch { Write-LogLLM "[Cache] Write ranking error for $($VacId): $_" -Level Warning }
 }
 
 # Remote/local summary helpers (mockable in tests)
@@ -431,9 +445,11 @@ function Get-RemoteSummaryForVacancy {
     $mock = [pscustomobject]@{ summary = 'remote summary'; language = 'ru'; model = 'test-model'; source = 'test' }
     return (if ($AsObject) { $mock } else { [string]$mock.summary })
   }
-  if ([string]::IsNullOrWhiteSpace($VacancyText) -and -not $Vacancy) { return (if ($AsObject) { $null } else { '' }) }
+  if ([string]::IsNullOrWhiteSpace($VacancyText) -and -not $Vacancy) { return (if ($AsObject) { $null } else { '' })
+  }
   $result = Invoke-CanonicalSummaryWithCache -Operation 'summary.remote' -Vacancy $Vacancy -BodyText $VacancyText -MaxTokens $MaxTokens
-  if (-not $result) { return (if ($AsObject) { $null } else { '' }) }
+  if (-not $result) { return (if ($AsObject) { $null } else { '' })
+  }
   if ($AsObject) { return $result }
   return [string]$result.summary
 }
@@ -450,9 +466,11 @@ function Get-LocalSummaryForVacancy {
     $mock = [pscustomobject]@{ summary = 'local summary'; language = 'ru'; model = 'local-test'; source = 'local' }
     return (if ($AsObject) { $mock } else { [string]$mock.summary })
   }
-  if ([string]::IsNullOrWhiteSpace($VacancyText) -and -not $Vacancy) { return (if ($AsObject) { $null } else { '' }) }
+  if ([string]::IsNullOrWhiteSpace($VacancyText) -and -not $Vacancy) { return (if ($AsObject) { $null } else { '' })
+  }
   $result = Invoke-CanonicalSummaryOperation -Operation 'summary.local' -BodyText ($VacancyText ?? '') -VacancyTitle ($Vacancy?.Title ?? '') -MaxTokens $MaxTokens
-  if (-not $result) { return (if ($AsObject) { $null } else { '' }) }
+  if (-not $result) { return (if ($AsObject) { $null } else { '' })
+  }
   if ($AsObject) { return $result }
   return [string]$result.summary
 }
@@ -483,7 +501,7 @@ function Get-HHLocalVacancySummary {
   if (-not [string]::IsNullOrWhiteSpace($fallback)) {
     $clean = Clean-SummaryText -Text $fallback
     if ([string]::IsNullOrWhiteSpace($clean)) { return $null }
-    return [pscustomobject]@{
+    return [pscustomobject]@{ 
       summary  = $clean
       language = Get-TextLanguage -Text $clean
       source   = 'local'
@@ -580,7 +598,7 @@ function Get-HHRemoteFitScore {
     if (-not $data) { return $null }
     $score = $null
     try { $score = [double]$data.fit_score } catch { $score = $null }
-    return [pscustomobject]@{
+    return [pscustomobject]@{ 
       fit_score  = $score
       confidence = if ($data.confidence -ne $null) { [double]$data.confidence } else { $null }
       reason     = [string]($data.reason ?? '')
@@ -649,7 +667,280 @@ Output plain text only.
   }
 }
 
-Export-ModuleMember -Function Get-HHPremiumVacancySummary
+function Invoke-BatchLocalSummaries {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][object[]]$Rows,
+    [Parameter(Mandatory = $false)][object]$CvSnapshot
+  )
+
+  if (-not $Rows -or $Rows.Count -eq 0) { return @() }
+
+  # 1. Determine Batch Size
+  $batchSize = 100
+  try { $batchSize = [int](Get-HHConfigValue -Path @('llm', 'batch_size') -Default 100) } catch {}
+  
+  # 2. Filter Rows needing summary
+  $todos = @()
+  foreach ($r in $Rows) {
+    # Skip if already has local summary or valid cache hit (handled internally by batch logic if we want, but better to filter early)
+    if ($r.Meta.local_summary) { continue }
+    
+    # Check cache
+    $cached = Read-SummaryCache -VacId ($r.Id ?? $r.id) -PubUtc ($r.PublishedAtUtc ?? $r.pub_utc)
+    if ($cached) {
+      # Apply cached immediately
+      $clean = Clean-SummaryText -Text $cached
+      if (-not $r.Meta.local_summary) { $r.Meta.local_summary = New-Object SummaryInfo }
+      $r.Meta.local_summary.text = $clean
+      $r.Meta.local_summary.lang = 'auto'
+      $r.Meta.local_summary.source = 'local'
+      $r.Meta.local_summary.model = 'cache'
+      continue
+    }
+    
+    $todos += $r
+  }
+
+  if ($todos.Count -eq 0) { return $Rows } # Nothing to do
+
+  # 3. Chunking
+  $chunks = @()
+  for ($i = 0; $i -lt $todos.Count; $i += $batchSize) {
+    $len = [Math]::Min($batchSize, ($todos.Count - $i))
+    $chunks += , ($todos[$i..($i + $len - 1)])
+  }
+
+  Write-LogLLM ("[BatchSummary] Processing {0} items in {1} chunks (size={2})" -f $todos.Count, $chunks.Count, $batchSize) -Level Verbose
+
+  # 4. Process Chunks
+  $op = 'summary.local'
+  $cfg = Resolve-LlmOperationConfig -Operation $op
+  if (-not $cfg.Ready) { return $Rows }
+
+  # Get Prompts
+  $sysPrompt = [string](Get-HHConfigValue -Path @('llm', 'prompts', 'summary', 'local', 'batch_system_ru') -Default "Return JSON map {'id':'summary'}.")
+  $userTemplate = [string](Get-HHConfigValue -Path @('llm', 'prompts', 'summary', 'local', 'batch_user') -Default "INPUT JSON:`n{{json}}")
+
+  foreach ($chunk in $chunks) {
+    # Build Payload
+    $payloadList = @()
+    $map = @{}
+    foreach ($item in $chunk) {
+      $desc = ''
+      try { $desc = [string]($item.Description ?? $item.description ?? $item.Meta?.plain_desc ?? '') } catch {}
+      if (-not $desc) { $desc = ($item.Title + " " + $item.EmployerName) }
+      
+      # Truncate slightly to fit huge batch if needed, but 380k is huge. 
+      # Let's keep reasonable limit per item to avoid noise (e.g. 1500 chars)
+      if ($desc.Length -gt 1500) { $desc = $desc.Substring(0, 1500) }
+      
+      $payloadItem = @{
+        id = [string]$item.Id
+        text = $desc
+      }
+      $payloadList += $payloadItem
+      $map[[string]$item.Id] = $item
+    }
+
+    $jsonInput = $payloadList | ConvertTo-Json -Depth 2 -Compress
+    $userPrompt = $userTemplate.Replace('{{json}}', $jsonInput)
+
+    $messages = @(
+      @{ role = 'system'; content = $sysPrompt },
+      @{ role = 'user'; content = $userPrompt }
+    )
+
+    try {
+        # Call LLM
+        $responseJson = LLM-InvokeText -Endpoint $cfg.Endpoint -ApiKey $cfg.ApiKey -Model $cfg.Model -Messages $messages -Temperature 0.1 -TimeoutSec ($cfg.TimeoutSec * 2) -MaxTokens ($cfg.MaxTokens ?? 4096) -OperationName "summary.local.batch"
+        
+        if ($responseJson) {
+            # Parse JSON response
+            # Sometimes LLM wraps in ```json ... ```
+            $cleanJson = $responseJson -replace '^```json', '' -replace '^```', '' -replace '```$', ''
+            $data = $cleanJson | ConvertFrom-Json -AsHashtable
+            
+            if ($data) {
+                foreach ($key in $data.Keys) {
+                    if ($map.ContainsKey($key)) {
+                        $row = $map[$key]
+                        $sumText = [string]$data[$key]
+                        
+                        # Clean and Assign
+                        $cleanSum = Clean-SummaryText -Text $sumText
+                        
+                        if (-not $row.Meta.local_summary) { $row.Meta.local_summary = New-Object SummaryInfo }
+                        $row.Meta.local_summary.text = $clean
+                        $row.Meta.local_summary.lang = 'ru' # Forced by system prompt
+                        $row.Meta.local_summary.source = 'local'
+                        $row.Meta.local_summary.model = $cfg.Model
+                        
+                        # Write to Cache
+                        try {
+                            Write-SummaryCache -VacId $row.Id -PubUtc $row.PublishedAtUtc -Summary $cleanSum
+                        } catch {}
+                    }
+                }
+            }
+        }
+    }
+    catch {
+        Write-LogLLM "[BatchSummary] Chunk failed: $_" -Level Warning
+    }
+  }
+}
+
+function Invoke-BatchRemoteRanking {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)][object[]]$Vacancies,
+    [Parameter(Mandatory = $true)][object]$CvSnapshot,
+    [Parameter(Mandatory = $false)][hashtable]$CvPayload
+  )
+
+  if (-not $Vacancies -or $Vacancies.Count -eq 0) { return }
+
+  # 1. Determine Batch Size
+  $batchSize = 20
+  try { $batchSize = [int](Get-HHConfigValue -Path @('llm', 'batch_size_ranking') -Default 20) } catch {}
+
+  # 2. Filter Rows needing ranking (check cache)
+  $todos = @()
+  foreach ($r in $Vacancies) {
+    # Check cache first
+    $cached = Read-RankingCache -VacId ($r.Id ?? $r.id)
+    if ($cached -and $cached.fit_score -ne $null) {
+        # Apply cached score
+        $score = [double]$cached.fit_score
+        $r.Meta.ranking.RemoteFitScore = $score
+        if ($cached.reason) {
+            if (-not $r.Meta.ranking.PSObject.Properties['RemoteFitReason']) {
+                $r.Meta.ranking | Add-Member -MemberType NoteProperty -Name 'RemoteFitReason' -Value $null -Force
+            }
+            $r.Meta.ranking.RemoteFitReason = [string]$cached.reason
+        }
+        # Update main score
+        $normalized = $score / 10.0
+        if (-not $r.Meta.scores) { $r.Meta.scores = New-Object ScoreInfo }
+        $r.Meta.scores.total = $normalized
+        $r.Meta.ranking.FinalScore = $score
+        $r.Score = $normalized
+        continue
+    }
+    $todos += $r
+  }
+
+  if ($todos.Count -eq 0) { return $Vacancies }
+
+  # 3. Prepare CV Context (once)
+  $candidate = @{}
+  if ($CvPayload) {
+    $candidate = $CvPayload
+  } else {
+    $skills = @()
+    try { if ($CvSnapshot.KeySkills) { $skills = @($CvSnapshot.KeySkills | Where-Object { $_ }) } } catch {}
+    $candidate = @{
+        title = $CvSnapshot.Title
+        skills = $skills
+        summary = $CvSnapshot.Summary
+    }
+  }
+  $cvJson = $candidate | ConvertTo-Json -Depth 3 -Compress
+
+  # 4. Chunking
+  $chunks = @()
+  for ($i = 0; $i -lt $todos.Count; $i += $batchSize) {
+    $len = [Math]::Min($batchSize, ($todos.Count - $i))
+    $chunks += , ($todos[$i..($i + $len - 1)])
+  }
+
+  Write-LogLLM ("[BatchRanking] Processing {0} items in {1} chunks (size={2})" -f $todos.Count, $chunks.Count, $batchSize) -Level Verbose
+
+  # 5. Process Chunks
+  $op = 'ranking.remote'
+  $cfg = Resolve-LlmOperationConfig -Operation $op
+  if (-not $cfg.Ready) { return }
+
+  $sysPrompt = [string](Get-HHConfigValue -Path @('llm', 'prompts', 'ranking_batch', 'system') -Default "Return JSON map ID->{fit_score, reason}.")
+  $userTemplate = [string](Get-HHConfigValue -Path @('llm', 'prompts', 'ranking_batch', 'user') -Default "CV: {{cv}}\n\nVACANCIES: {{vacancies}}")
+
+  foreach ($chunk in $chunks) {
+    $vacList = @()
+    $map = @{}
+    foreach ($v in $chunk) {
+        $desc = ''
+        try { $desc = [string]($v.Description ?? $v.description ?? '') } catch {}
+        $descPlain = $desc -replace '<[^>]+>', ' ' -replace '\s+', ' '
+        if ($descPlain.Length -gt 2500) { $descPlain = $descPlain.Substring(0, 2500) }
+        
+        $sumText = ''
+        try { $sumText = [string]($v.Meta?.local_summary?.summary ?? $v.Summary ?? '') } catch {}
+
+        $item = @{
+            id = [string]$v.Id
+            title = [string]$v.Title
+            employer = [string]$v.EmployerName
+            salary = [string]$v.Salary?.Text
+            description = $descPlain
+            local_summary = $sumText
+        }
+        $vacList += $item
+        $map[[string]$v.Id] = $v
+    }
+
+    $vacJson = $vacList | ConvertTo-Json -Depth 3 -Compress
+    $userPrompt = $userTemplate.Replace('{{cv}}', $cvJson).Replace('{{vacancies}}', $vacJson)
+
+    $messages = @(
+      @{ role = 'system'; content = $sysPrompt },
+      @{ role = 'user'; content = $userPrompt }
+    )
+
+    try {
+        $responseJson = LLM-InvokeText -Endpoint $cfg.Endpoint -ApiKey $cfg.ApiKey -Model $cfg.Model -Messages $messages -Temperature 0.0 -TimeoutSec ($cfg.TimeoutSec * 3) -MaxTokens ($cfg.MaxTokens ?? 2048) -OperationName "$op.batch"
+        
+        if ($responseJson) {
+            $cleanJson = $responseJson -replace '^```json', '' -replace '^```', '' -replace '```$', ''
+            $data = $cleanJson | ConvertFrom-Json -AsHashtable
+            
+            if ($data) {
+                foreach ($key in $data.Keys) {
+                    if ($map.ContainsKey($key)) {
+                        $row = $map[$key]
+                        $resInfo = $data[$key]
+                        
+                        if ($resInfo.fit_score -ne $null) {
+                            $score = [double]$resInfo.fit_score
+                            $reason = if ($resInfo.reason) { [string]$resInfo.reason } else { '' }
+                            
+                            $row.Meta.ranking.RemoteFitScore = $score
+                            if ($reason) {
+                                if (-not $row.Meta.ranking.PSObject.Properties['RemoteFitReason']) {
+                                    $row.Meta.ranking | Add-Member -MemberType NoteProperty -Name 'RemoteFitReason' -Value $null -Force
+                                }
+                                $row.Meta.ranking.RemoteFitReason = $reason
+                            }
+                            # Update main score
+                            $normalized = $score / 10.0
+                            if (-not $r.Meta.scores) { $r.Meta.scores = New-Object ScoreInfo }
+                            $r.Meta.scores.total = $normalized
+                            $r.Meta.ranking.FinalScore = $score
+                            $r.Score = $normalized
+                            
+                            # Cache the result
+                            Write-RankingCache -VacId $row.Id -Score $score -Reason $reason
+                        }
+                    }
+                }
+            }
+        }
+    }
+    catch {
+        Write-LogLLM "[BatchRanking] Chunk failed: $_" -Level Warning
+    }
+  }
+}
 
 function LLM-BuildSummary {
   param($Vacancy)
@@ -776,4 +1067,4 @@ function Invoke-LLMSummaries {
   return $results
 }
 
-Export-ModuleMember -Function Get-RemoteSummaryForVacancy, Get-LocalSummaryForVacancy, Get-SummaryCachePath, Read-SummaryCache, Write-SummaryCache, Get-RemoteSummaryContext, Get-SummaryPromptSet, Expand-SummaryUserPrompt, Get-HHLocalVacancySummary, Get-HHQwenFitScore, Get-HHPremiumVacancySummary, Invoke-LLMSummaries, Get-HHRemoteFitScore, Invoke-CanonicalSummaryWithCache, Clean-SummaryText, Get-HHRemoteVacancySummary
+Export-ModuleMember -Function Get-RemoteSummaryForVacancy, Get-LocalSummaryForVacancy, Read-SummaryCache, Write-SummaryCache, Read-RankingCache, Write-RankingCache, Get-RemoteSummaryContext, Get-SummaryPromptSet, Expand-SummaryUserPrompt, Get-HHLocalVacancySummary, Get-HHQwenFitScore, Get-HHPremiumVacancySummary, Invoke-LLMSummaries, Get-HHRemoteFitScore, Invoke-CanonicalSummaryWithCache, Clean-SummaryText, Get-HHRemoteVacancySummary, Invoke-BatchLocalSummaries, Invoke-BatchRemoteRanking

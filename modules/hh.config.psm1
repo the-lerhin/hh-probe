@@ -56,6 +56,7 @@ function Get-HHConfigPath {
       return $script:ConfigPath
     }
   }
+  Write-Warning "[Config] No configuration file found (checked env:HH_CONFIG_FILE and config/hh.config.jsonc)"
   return $null
 }
 
@@ -197,6 +198,11 @@ function Get-HHSecrets {
         if (-not [string]::IsNullOrWhiteSpace($candidate)) { $telegramChat = $candidate; $telegramChatSource = "env:$envName"; break }
       }
     }
+  }
+  if ([string]::IsNullOrWhiteSpace($telegramChat)) {
+      # Last resort check for 'telegram.chat_id' in a flat structure if not found above
+      $flatCheck = Get-HHConfigValue -Path @('telegram_chat_id')
+      if ($flatCheck) { $telegramChat = [string]$flatCheck; $telegramChatSource = 'config:flat_telegram_chat_id' }
   }
   if (-not [string]::IsNullOrWhiteSpace($telegramChat)) { $telegramChat = $telegramChat.Trim() }
 

@@ -2,22 +2,21 @@ using module ./hh.models.psm1
 # hh.notify.psm1 — Telegram notification helpers
 #Requires -Version 7.5
 
-try {
-  if (-not (Get-Module -Name 'hh.config')) {
-    $cfgModule = Join-Path $PSScriptRoot 'hh.config.psm1'
-    if (Test-Path -LiteralPath $cfgModule) {
-      Import-Module $cfgModule -DisableNameChecking -ErrorAction SilentlyContinue
-    }
-  }
-  if (-not (Get-Module -Name 'hh.http')) {
-    $httpModule = Join-Path $PSScriptRoot 'hh.http.psm1'
-    if (Test-Path -LiteralPath $httpModule) {
-      Import-Module $httpModule -DisableNameChecking -ErrorAction SilentlyContinue
-    }
+# Ensure hh.config is available in this module scope
+if (-not (Get-Module -Name 'hh.config')) {
+  $cfgModule = Join-Path $PSScriptRoot 'hh.config.psm1'
+  if (Test-Path -LiteralPath $cfgModule) {
+    Import-Module $cfgModule -DisableNameChecking -ErrorAction Stop
   }
 }
-catch {}
 
+# Ensure hh.http is available in this module scope
+if (-not (Get-Module -Name 'hh.http')) {
+  $httpModule = Join-Path $PSScriptRoot 'hh.http.psm1'
+  if (Test-Path -LiteralPath $httpModule) {
+    Import-Module $httpModule -DisableNameChecking -ErrorAction Stop
+  }
+}
 
 function Invoke-NotifyLog {
   param(
@@ -85,100 +84,44 @@ function Get-GlobalVariableValue {
 }
 
 function Get-TelegramSecretsInternal {
+  param($Secrets = $null)
+  $s = $Secrets
+  if (-not $s) {
+    try { $s = hh.config\Get-HHSecrets } catch {}
+  }
   $token = ''
   $chat = ''
-  $tokenSource = 'none'
-  $chatSource = 'none'
-  try {
-    if (Get-Command -Name 'hh.config\Get-HHSecrets' -ErrorAction SilentlyContinue) {
-      $srv = & hh.config\Get-HHSecrets
+  $tokenSrc = ''
+  $chatSrc = ''
+  if ($s) {
+    try { $token = [string]$s.TelegramToken } catch { $token = '' }
+    try { $tokenSrc = [string]$s.TelegramTokenSource } catch { $tokenSrc = '' }
+    $chatValue = $null
+    try { $chatValue = $s.TelegramChat } catch {}
+    if (-not $chatValue) {
+      try { $chatValue = $s.TelegramChatId } catch {}
     }
-    elseif (Get-Command -Name 'Get-HHSecrets' -ErrorAction SilentlyContinue) {
-      $srv = Get-HHSecrets
+    if (-not $chatValue) {
+      try { $chatValue = $s.TelegramChatID } catch {}
     }
-    else {
-      $srv = $null
+    if ($chatValue -ne $null) {
+      $chat = [string]$chatValue
     }
-    if ($srv) {
-      if (-not [string]::IsNullOrWhiteSpace($srv.TelegramToken)) {
-        $token = [string]$srv.TelegramToken
-        $tokenSource = [string]($srv.TelegramTokenSource ?? 'hh.config')
-      }
-      if (-not [string]::IsNullOrWhiteSpace($srv.TelegramChat)) {
-        $chat = [string]$srv.TelegramChat
-        $chatSource = [string]($srv.TelegramChatSource ?? 'hh.config')
-      }
+    try { $chatSrc = [string]$s.TelegramChatSource } catch { $chatSrc = '' }
+  }
+  else {
+    return [pscustomobject]@{
+      Token       = $null
+      Chat        = $null
+      TokenSource = 'none'
+      ChatSource  = 'none'
     }
   }
-  catch {}
-
-  if ([string]::IsNullOrWhiteSpace($token)) {
-    try {
-      $tkCfg = [string](Get-HHConfigValue -Path @('keys', 'telegram_bot_token'))
-      if (-not [string]::IsNullOrWhiteSpace($tkCfg)) {
-        $token = $tkCfg.Trim()
-        $tokenSource = 'config:keys.telegram_bot_token'
-      }
-    }
-    catch {}
-  }
-  if ([string]::IsNullOrWhiteSpace($token)) {
-    try {
-      $tkCfg = [string](Get-HHConfigValue -Path @('telegram', 'bot_token'))
-      if (-not [string]::IsNullOrWhiteSpace($tkCfg)) {
-        $token = $tkCfg.Trim()
-        $tokenSource = 'config:telegram.bot_token'
-      }
-    }
-    catch {}
-  }
-  if ([string]::IsNullOrWhiteSpace($chat)) {
-    try {
-      $cidCfg = [string](Get-HHConfigValue -Path @('keys', 'telegram_chat_id'))
-      if (-not [string]::IsNullOrWhiteSpace($cidCfg)) {
-        $chat = $cidCfg.Trim()
-        $chatSource = 'config:keys.telegram_chat_id'
-      }
-    }
-    catch {}
-  }
-  if ([string]::IsNullOrWhiteSpace($chat)) {
-    try {
-      $cidCfg = [string](Get-HHConfigValue -Path @('telegram', 'chat_id'))
-      if (-not [string]::IsNullOrWhiteSpace($cidCfg)) {
-        $chat = $cidCfg.Trim()
-        $chatSource = 'config:telegram.chat_id'
-      }
-    }
-    catch {}
-  }
-
-  if ([string]::IsNullOrWhiteSpace($token)) {
-    foreach ($envName in @('TELEGRAM_BOT_TOKEN', 'TELEGRAM_TOKEN', 'TG_BOT_TOKEN', 'BOT_TOKEN')) {
-      $candidate = [string](Get-Item -LiteralPath Env:\$envName -ErrorAction SilentlyContinue).Value
-      if (-not [string]::IsNullOrWhiteSpace($candidate)) {
-        $token = $candidate.Trim()
-        $tokenSource = "env:$envName"
-        break
-      }
-    }
-  }
-  if ([string]::IsNullOrWhiteSpace($chat)) {
-    foreach ($envName in @('TELEGRAM_CHAT_ID', 'TG_CHAT_ID', 'BOT_CHAT_ID', 'TELEGRAM_TO')) {
-      $candidate = [string](Get-Item -LiteralPath Env:\$envName -ErrorAction SilentlyContinue).Value
-      if (-not [string]::IsNullOrWhiteSpace($candidate)) {
-        $chat = $candidate.Trim()
-        $chatSource = "env:$envName"
-        break
-      }
-    }
-  }
-
   return [pscustomobject]@{
     Token       = $token
     Chat        = $chat
-    TokenSource = $tokenSource
-    ChatSource  = $chatSource
+    TokenSource = $tokenSrc
+    ChatSource  = $chatSrc
   }
 }
 
@@ -219,7 +162,8 @@ function Send-Telegram {
     [Parameter(Mandatory = $true)][string]$Text,
     [switch]$DisablePreview,
     [switch]$Strict,
-    [switch]$DryRun
+    [switch]$DryRun,
+    $Secrets = $null
   )
   try {
     $textLen = 0
@@ -236,20 +180,23 @@ function Send-Telegram {
       return [PSCustomObject]@{ ok = $true; status = 0; message = 'dry-run' }
     }
 
-    $valid = Test-TelegramConfig
-    $tk = ''; $cid = ''; $srcTk = ''; $srcCid = ''
-    if ($valid) {
-      $resolved = Get-TelegramSecretsInternal
-      $tk = [string]$resolved.Token
-      $cid = [string]$resolved.Chat
-      $srcTk = [string]$resolved.TokenSource
-      $srcCid = [string]$resolved.ChatSource
+    $rawSecrets = $Secrets
+    if (-not $rawSecrets) {
+      try { $rawSecrets = hh.config\Get-HHSecrets } catch {}
     }
-    else {
+    $resolved = Get-TelegramSecretsInternal -Secrets $rawSecrets
+    $tokenEmpty = [string]::IsNullOrWhiteSpace($resolved.Token)
+    $chatEmpty = [string]::IsNullOrWhiteSpace($resolved.Chat)
+    if ($tokenEmpty -or $chatEmpty) {
       if ($Strict) { throw 'Telegram config invalid' }
-      Invoke-NotifyLog '[Telegram] WARNING: skipped send (token or chat_id missing)' -Level Warning
+      Invoke-NotifyLog '[Telegram] WARNING: config invalid (token or chat_id missing)' -Level Warning
       return [PSCustomObject]@{ ok = $false; status = 0; message = 'config invalid' }
     }
+    $tk = [string]$resolved.Token
+    $cid = [string]$resolved.Chat
+    $srcTk = if ([string]::IsNullOrWhiteSpace([string]$resolved.TokenSource)) { 'none' } else { [string]$resolved.TokenSource }
+    $srcCid = if ([string]::IsNullOrWhiteSpace([string]$resolved.ChatSource)) { 'none' } else { [string]$resolved.ChatSource }
+    Invoke-NotifyLog ("[Telegram] DEBUG: token source={0}; chat source={1}; tokenEmpty={2}; chatEmpty={3}" -f $srcTk, $srcCid, $tokenEmpty, $chatEmpty) -Level Verbose
     Invoke-NotifyLog ("[Config] Telegram token source: {0}; chat source: {1}" -f $srcTk, $srcCid) -Level Verbose
 
     $uri = "https://api.telegram.org/bot$tk/sendMessage"
@@ -260,15 +207,8 @@ function Send-Telegram {
       parse_mode               = 'HTML'
     }
     Invoke-NotifyLog ("[TG] sending to chat {0}; len={1}" -f $cid, $textLen) -Level Output
-    # Prefer module-qualified HTTP wrapper to improve test reliability
-    $resp = $null
-    if (Get-Command -Name 'hh.http\Invoke-HttpRequest' -ErrorAction SilentlyContinue) {
-      $resp = & hh.http\Invoke-HttpRequest -Uri $uri -Method 'POST' -Body $body -TimeoutSec 20 -OperationName 'Telegram POST' -ApplyRateLimit:$false
-    }
-    else {
-      $resp = Invoke-WebRequest -Uri $uri -Method 'POST' -Body ($body | ConvertTo-Json) -ContentType 'application/json' -TimeoutSec 20
-      $resp = $resp.Content | ConvertFrom-Json
-    }
+    # Use module-qualified HTTP wrapper
+    $resp = hh.http\Invoke-HttpRequest -Uri $uri -Method 'POST' -Body $body -TimeoutSec 20 -OperationName 'Telegram POST' -ApplyRateLimit:$false
     Invoke-NotifyLog '[TG] sent ok' -Level Output
     return [PSCustomObject]@{ ok = $true; status = 200; message = 'ok' }
   }
@@ -307,7 +247,6 @@ function Send-TelegramDigest {
     [switch]$DryRun
   )
   try {
-    $cfgValid = Test-TelegramConfig
     if (-not $SearchLabel) {
       $fallback = Get-GlobalVariableValue -Name 'DigestLabel'
       if (-not [string]::IsNullOrWhiteSpace($fallback)) { $SearchLabel = $fallback }
@@ -539,19 +478,16 @@ function Send-TelegramDigest {
         catch {}
       }
     }
-    if (-not $cfgValid) {
-      if ($Strict) { throw 'Telegram config invalid' }
-      Invoke-NotifyLog '[Telegram] WARNING: digest skipped (invalid config)' -Level Warning
-      return $false
-    }
-    
+    $rawSecrets = $null
+    try { $rawSecrets = hh.config\Get-HHSecrets } catch {}
+
     # Defensive guard: prevent sending empty Telegram messages
     if ([string]::IsNullOrWhiteSpace($text)) {
       Invoke-NotifyLog '[Telegram] WARNING: digest text is empty; skipping send' -Level Warning
       return $false
     }
     
-    $sendRes = Send-Telegram -Text $text -Strict:$Strict
+    $sendRes = Send-Telegram -Text $text -Strict:$Strict -Secrets $rawSecrets
     if ($sendRes -and ($sendRes.ok -or $sendRes -eq $true)) {
       Invoke-NotifyLog '[Telegram] digest sent' -Level Output
       return $true
@@ -596,7 +532,6 @@ function Send-TelegramPing {
     [switch]$DryRun
   )
   try {
-    $cfgValid = Test-TelegramConfig
     if (-not $RunStats -and -not $PipelineState) {
       $PipelineState = Get-GlobalVariableValue -Name 'PipelineState'
     }
@@ -930,11 +865,8 @@ function Send-TelegramPing {
         catch {}
       }
     }
-    if (-not $cfgValid) {
-      if ($Strict) { throw 'Telegram config invalid' }
-      Invoke-NotifyLog '[Telegram] WARNING: ping skipped (invalid config)' -Level Warning
-      return $false
-    }
+    $rawSecrets = $null
+    try { $rawSecrets = hh.config\Get-HHSecrets } catch {}
     
     # Defensive guard: prevent sending empty Telegram messages
     if ([string]::IsNullOrWhiteSpace($text)) {
@@ -942,7 +874,7 @@ function Send-TelegramPing {
       return $false
     }
     
-    $sendRes = Send-Telegram -Text $text -Strict:$Strict
+    $sendRes = Send-Telegram -Text $text -Strict:$Strict -Secrets $rawSecrets
     if ($sendRes -and ($sendRes.ok -or $sendRes -eq $true)) {
       Invoke-NotifyLog '[Telegram] ping sent' -Level Output
       return $true

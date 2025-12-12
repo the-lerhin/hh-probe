@@ -4,14 +4,19 @@
 # Imports (ensure dependencies are available)
 # Note: Modules are usually loaded by hh.ps1, but we declare dependencies here for clarity
 using module ./hh.models.psm1
-# Ensure config module is available for Get-HHConfigValue
+# Ensure config module is available for Get-HHConfigValue in every runspace
+$cfgPath = Join-Path $PSScriptRoot 'hh.config.psm1'
 if (Get-Module -Name hh.config -ErrorAction SilentlyContinue) {
-    # Already loaded
+    # Already loaded in this runspace; verify exports are usable
+    if (-not (Get-Command -Name Get-HHConfigValue -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $cfgPath)) {
+        Import-Module $cfgPath -DisableNameChecking -ErrorAction Stop
+    }
 }
 else {
     # Try to load relative to this file
-    $cfgPath = Join-Path $PSScriptRoot 'hh.config.psm1'
-    if (Test-Path $cfgPath) { Import-Module $cfgPath -ErrorAction SilentlyContinue }
+    if (Test-Path -LiteralPath $cfgPath) {
+        Import-Module $cfgPath -DisableNameChecking -ErrorAction Stop
+    }
 }
 
 
@@ -34,9 +39,13 @@ if (-not $script:HHAreaCountryCache) { $script:HHAreaCountryCache = @{} }
 # Helpers
 # ==============================================================================
 
-function Get-HHEffectiveSearchFilters {
+function Get-HHSearchFilters {
     [CmdletBinding()]
     param()
+    
+    # Ensure config module is loaded
+    $configPath = Join-Path $PSScriptRoot 'hh.config.psm1'
+    if (Test-Path $configPath) { Import-Module $configPath -DisableNameChecking -ErrorAction SilentlyContinue }
     
     $filters = @{}
     
@@ -173,7 +182,11 @@ function Search-Vacancies {
         [int]$MaxPages = 5
     )
     
-    $filters = Get-HHEffectiveSearchFilters
+    # Ensure config module is loaded
+    $configPath = Join-Path $PSScriptRoot 'hh.config.psm1'
+    if (Test-Path $configPath) { Import-Module $configPath -DisableNameChecking -ErrorAction SilentlyContinue }
+    
+    $filters = Get-HHSearchFilters
     $results = @()
     
     for ($p = 0; $p -lt $MaxPages; $p++) {
@@ -323,6 +336,10 @@ function Get-HHWebRecommendations {
         [string]$ResumeId = ''
     )
     
+    # Ensure config module is loaded
+    $configPath = Join-Path $PSScriptRoot 'hh.config.psm1'
+    if (Test-Path $configPath) { Import-Module $configPath -DisableNameChecking -ErrorAction SilentlyContinue }
+    
     # Check config for web scraping
     $scrapeCfg = $null
     if (Get-Command -Name Get-HHConfigValue -ErrorAction SilentlyContinue) {
@@ -399,7 +416,7 @@ function Get-HHWebRecommendations {
                             search_tiers     = @('web_recommendation')
                             needs_enrichment = $true
                             published_at     = (Get-Date).ToString("yyyy-MM-ddTHH:mm:sszzz") # Placeholder to avoid warnings before enrichment
-                            employer         = @{ id = "0"; name = "Loading..." } # Placeholder
+                            employer         = @{ name = "Loading..." } # Placeholder (No ID to avoid 404s)
                         }
                         $results += $obj
                         $cnt++
@@ -428,9 +445,15 @@ function Get-HHHybridVacancies {
         [hashtable]$Config
     )
     
+    # Явная загрузка модулей для последовательного контекста
+    $modulesPath = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+    Import-Module (Join-Path $modulesPath 'hh.http.psm1') -DisableNameChecking -ErrorAction SilentlyContinue
+    Import-Module (Join-Path $modulesPath 'hh.config.psm1') -DisableNameChecking -ErrorAction SilentlyContinue
+    
     $itemsSimilar = @()
     $itemsGeneral = @()
     $itemsRec = @()
+    $itemsGetmatch = @()
     
     $perPage = 20
     if ($Config -and $Config.ContainsKey('PerPage')) { $perPage = $Config['PerPage'] }
@@ -462,6 +485,52 @@ function Get-HHHybridVacancies {
         $jobs += [pscustomobject]@{ Name = 'HH_General'; Script = { Search-Vacancies -QueryText $args[0] -PerPage $args[1] -MaxPages $args[2] }; Args = @($QueryText, $perPage, $pages) }
     }
     
+    # Getmatch
+    $getmatchCfg = Get-GetmatchConfig
+    if ($getmatchCfg.enabled) {
+        # Extract parameters and pre-generate URLs to avoid serialization issues
+        $baseUrl = $getmatchCfg['base_url']
+        $pages = $getmatchCfg['pages']
+        
+        # Convert PSCustomObject to hashtable if needed
+        $params = $getmatchCfg['params']
+        if ($params -is [PSCustomObject]) {
+            $paramsHash = @{}
+            $params.PSObject.Properties | ForEach-Object {
+                $paramsHash[$_.Name] = $_.Value
+            }
+            $params = $paramsHash
+        }
+        
+        # Generate URLs upfront
+        $getmatchUrls = @()
+        for ($i = 1; $i -le $pages; $i++) {
+            $url = $baseUrl + '?p=' + $i
+            
+            # Check if params exist and have actual keys (not empty hashtable)
+            if ($params -and $params.Count -gt 0 -and $params.Keys.Count -gt 0) {
+                $queryParams = @()
+                foreach ($key in $params.Keys) {
+                    $val = $params[$key]
+                    if ($val -is [array]) {
+                        $queryParams += "$key=$($val -join ',')"
+                    } else {
+                        $queryParams += "$key=$val"
+                    }
+                }
+                if ($queryParams.Count -gt 0) {
+                    $url += '&' + ($queryParams -join '&')
+                }
+            }
+            $getmatchUrls += $url
+        }
+        
+        $jobs += [pscustomobject]@{ Name = 'Getmatch'; Script = { 
+            # Simple URL-based execution - no config serialization
+            Get-GetmatchVacanciesRaw -Urls $args[0]
+        }; Args = @($getmatchUrls) }
+    }
+    
     # Execute jobs (sequential for now to simulate parallel structure until PoshRSJob/ThreadJob is standardized)
     # TODO: Replace with real parallel execution when infrastructure allows (SDD-6.3)
     # WARNING: Do not parallelize internal HH fetch (Similar/Recs/General) until hh.http.psm1 supports 
@@ -477,6 +546,7 @@ function Get-HHHybridVacancies {
             if ($job.Name -eq 'HH_Similar') { $itemsSimilar = $res }
             elseif ($job.Name -eq 'HH_Recs') { $itemsRec = $res }
             elseif ($job.Name -eq 'HH_General') { $itemsGeneral = $res }
+            elseif ($job.Name -eq 'Getmatch') { $itemsGetmatch = $res }
         }
         catch {
             Write-LogFetch -Message "Job $($job.Name) failed: $_" -Level Error
@@ -484,7 +554,7 @@ function Get-HHHybridVacancies {
     }
     
     # 4. Dedup
-    # Priority: similar > recommendation > general.
+    # Priority: similar > recommendation > general > getmatch.
     $dedup = @{}
     $finalList = @()
     
@@ -493,6 +563,10 @@ function Get-HHHybridVacancies {
         param($list, $tierName)
         foreach ($i in $list) {
             $id = $i.id
+            if ([string]::IsNullOrWhiteSpace($id)) {
+                Write-LogFetch -Message "Skipping item from tier $tierName due to missing ID." -Level Warning
+                continue # Skip items with no ID
+            }
             if (-not $dedup.ContainsKey($id)) {
                 $dedup[$id] = $i
                 # Ensure search_tiers tracks all sources if we merged (but here we pick first winner)
@@ -509,10 +583,17 @@ function Get-HHHybridVacancies {
         }
     }
     
-    # Apply in priority order
+    # Apply in priority order (HH sources only - dedup within HH)
     . $AddList $itemsSimilar 'similar'
     . $AddList $itemsRec 'web_recommendation'
     . $AddList $itemsGeneral 'general'
+    
+    # Getmatch добавляется БЕЗ дедупликации против HH (согласно FRD-1.5)
+    foreach ($item in $itemsGetmatch) {
+        if ($item -ne $null) {
+            $finalList += $item
+        }
+    }
     
     # Return wrapped result
     return [PSCustomObject]@{
@@ -522,6 +603,7 @@ function Get-HHHybridVacancies {
             Similar         = $itemsSimilar.Count
             Recommendations = $itemsRec.Count
             General         = $itemsGeneral.Count
+            Getmatch        = $itemsGetmatch.Count
         }
     }
 }
@@ -758,18 +840,6 @@ function Get-SkillsVocab {
 # Getmatch.ru Integration (Phase 1)
 # ==============================================================================
 
-function Get-GetmatchConfig {
-    [CmdletBinding()]
-    param()
-
-    if (Get-Command -Name 'Get-HHConfigValue' -ErrorAction SilentlyContinue) {
-        $cfg = Get-HHConfigValue -Path @('getmatch') -Default @{}
-        if (-not $cfg) { return @{} }
-        return $cfg
-    }
-    return @{}
-}
-
 function Get-GetmatchQueryUrl {
     [CmdletBinding()]
     param(
@@ -786,14 +856,23 @@ function Get-GetmatchQueryUrl {
     # Page (API usually 1-based)
     $p.Add("p=$Page")
 
-    if ($GetmatchConfig['params']) {
-        $params = $GetmatchConfig['params']
+    # Check if params exist and convert PSCustomObject to hashtable if needed
+    $params = $GetmatchConfig['params']
+    if ($params -is [PSCustomObject]) {
+        $paramsHash = @{}
+        $params.PSObject.Properties | ForEach-Object {
+            $paramsHash[$_.Name] = $_.Value
+        }
+        $params = $paramsHash
+    }
+    
+    if ($params -and $params.Keys.Count -gt 0) {
         foreach ($key in $params.Keys) {
             $val = $params[$key]
             if ($val -is [array] -or $val -is [System.Collections.IEnumerable] -and $val -isnot [string]) {
-                foreach ($v in $val) {
-                    $p.Add("$key=$v")
-                }
+                # For arrays, join values with commas: l=moscow,remote
+                $joinedVal = $val -join ','
+                $p.Add("$key=$joinedVal")
             }
             else {
                 $p.Add("$key=$val")
@@ -828,12 +907,22 @@ function Get-GetmatchQueryUrls {
 function Get-GetmatchVacanciesRaw {
     [CmdletBinding()]
     param(
-        [hashtable]$GetmatchConfig
+        [hashtable]$GetmatchConfig,
+        [array]$Urls
     )
+
+    # Ensure HTTP module is available for Invoke-HttpRequest
+    $httpPath = Join-Path $PSScriptRoot 'hh.http.psm1'
+    if (Test-Path $httpPath) { Import-Module $httpPath -DisableNameChecking -ErrorAction SilentlyContinue }
 
     $results = @()
   
-    $urls = Get-GetmatchQueryUrls -GetmatchConfig $GetmatchConfig
+    # Use pre-generated URLs if provided, otherwise generate from config
+    if ($Urls -and $Urls.Count -gt 0) {
+        $urls = $Urls
+    } else {
+        $urls = Get-GetmatchQueryUrls -GetmatchConfig $GetmatchConfig
+    }
   
     $i = 0
     foreach ($url in $urls) {
@@ -934,8 +1023,17 @@ function Get-GetmatchVacanciesRaw {
                                 if (($null -eq $stack -or $stack.Count -eq 0) -and $offer.one_day_offer_content_v3 -and $offer.one_day_offer_content_v3.block_two -and $offer.one_day_offer_content_v3.block_two.stack) {
                                     $stack = $offer.one_day_offer_content_v3.block_two.stack
                                 }
+
+                                # Extract ID
+                                $vid = ""
+                                if ($offer.id) { $vid = [string]$offer.id }
+                                if (-not $vid -and $offer.url) {
+                                    $mId = [regex]::Match($offer.url, '/vacancies/(\d+)')
+                                    if ($mId.Success) { $vid = $mId.Groups[1].Value }
+                                }
                         
                                 $obj = [pscustomobject]@{
+                                    id           = $vid
                                     Source       = 'getmatch'
                                     Title        = $offer.position
                                     EmployerName = $offer.company?.name
@@ -1093,8 +1191,14 @@ function Get-GetmatchVacanciesRaw {
                 
                         # Use textAfter as RawContext for display/debug as it likely contains the desc
                         $textOnly = $textAfter
+
+                        # Extract ID
+                        $vid = ""
+                        $mId = [regex]::Match($relUrl, '/vacancies/(\d+)')
+                        if ($mId.Success) { $vid = $mId.Groups[1].Value }
                 
                         $obj = [pscustomobject]@{
+                            id           = $vid
                             Source       = 'getmatch'
                             Title        = $titleRaw
                             EmployerName = $employer
@@ -1216,4 +1320,62 @@ function Get-ExchangeRates {
     return $rates
 }
 
-Export-ModuleMember -Function Write-LogFetch, Get-HHEffectiveSearchFilters, Search-Vacancies, Get-HHSimilarVacancies, Get-HHWebRecommendations, Get-HHHybridVacancies, Get-VacancyDetail, Get-EmployerDetail, Get-SkillsVocab, Get-GetmatchConfig, Get-GetmatchQueryUrl, Get-GetmatchQueryUrls, Get-GetmatchVacanciesRaw, Resolve-HHAreaIdByName, Resolve-HHRoleIdByName, Resolve-HHAreaCountry, Get-HHAreaDetail, Get-HHAreaCacheKey, Get-EmployerRatingScrape, Parse-EmployerRatingHtml, Update-EmployerRating, Get-ExchangeRates
+function Convert-PSCustomObjectToHashtable {
+    param([PSCustomObject]$Object)
+    $hash = @{}
+    foreach ($prop in $Object.PSObject.Properties) {
+        $value = $prop.Value
+        if ($value -is [PSCustomObject]) {
+            $hash[$prop.Name] = Convert-PSCustomObjectToHashtable -Object $value
+        }
+        elseif ($value -is [System.Collections.IEnumerable] -and $value -isnot [string]) {
+            $list = New-Object System.Collections.ArrayList
+            foreach ($item in $value) {
+                if ($item -is [PSCustomObject]) {
+                    $list.Add((Convert-PSCustomObjectToHashtable -Object $item))
+                } else {
+                    $list.Add($item)
+                }
+            }
+            $hash[$prop.Name] = $list.ToArray()
+        }
+        else {
+            $hash[$prop.Name] = $value
+        }
+    }
+    return $hash
+}
+
+function Get-GetmatchConfig {
+    [CmdletBinding()]
+    param()
+
+    # Ensure config module is loaded
+    $configPath = Join-Path $PSScriptRoot 'hh.config.psm1'
+    if (Test-Path $configPath) { Import-Module $configPath -DisableNameChecking -ErrorAction SilentlyContinue }
+
+    if (Get-Command -Name 'Get-HHConfigValue' -ErrorAction SilentlyContinue) {
+        $cfg = Get-HHConfigValue -Path @('getmatch') -Default @{}
+        
+        if (-not $cfg) { return @{} }
+        
+        # If it's already a hashtable, return as-is
+        if ($cfg -is [hashtable]) {
+            return $cfg
+        }
+        
+        # For PSCustomObject, convert to hashtable using simple approach
+        if ($cfg -is [PSCustomObject]) {
+            $hash = @{}
+            $cfg.PSObject.Properties | ForEach-Object {
+                $hash[$_.Name] = $_.Value
+            }
+            return $hash
+        }
+        
+        return $cfg
+    }
+    return @{}
+}
+
+Export-ModuleMember -Function Write-LogFetch, Get-HHSearchFilters, Search-Vacancies, Get-HHSimilarVacancies, Get-HHWebRecommendations, Get-HHHybridVacancies, Get-VacancyDetail, Get-EmployerDetail, Get-SkillsVocab, Get-GetmatchConfig, Get-GetmatchQueryUrl, Get-GetmatchQueryUrls, Get-GetmatchVacanciesRaw, Resolve-HHAreaIdByName, Resolve-HHRoleIdByName, Resolve-HHAreaCountry, Get-HHAreaDetail, Get-HHAreaCacheKey, Get-EmployerRatingScrape, Parse-EmployerRatingHtml, Update-EmployerRating, Get-ExchangeRates, Convert-PSCustomObjectToHashtable

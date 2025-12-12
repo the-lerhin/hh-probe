@@ -553,7 +553,7 @@ function Escape-Attr {
 
 function Render-CSVReport {
   param(
-    [Parameter(Mandatory = $true)][object[]]$Rows,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Rows,
     [string]$OutputsRoot
   )
   Write-Log -Message "[Render/CSV] begin" -Level Verbose -Module 'Render'
@@ -962,7 +962,7 @@ function Convert-CanonicalToSerializable {
 
 function Render-JsonReport {
   param(
-    [Parameter(Mandatory = $true)][object[]]$Rows,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][object[]]$Rows,
     [string]$OutputsRoot
   )
   Write-Log -Message "[Render/JSON] begin" -Level Verbose -Module 'Render'
